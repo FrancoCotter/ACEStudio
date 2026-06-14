@@ -1,0 +1,1164 @@
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Song } from '../types';
+import { Play, MoreHorizontal, Heart, Pause, Search, Filter, Check, Globe, Lock, Loader2, ThumbsUp, Info, Clock, BarChart3, X, Mic2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../context/I18nContext';
+import { SongDropdownMenu } from './SongDropdownMenu';
+import { AlbumCover } from './AlbumCover';
+import { songsApi } from '../services/api';
+import { getAvatarUrl } from '../utils/avatar';
+import { getSongCaption, getSongTags } from '../utils/songMetadata';
+
+interface SongListProps {
+    songs: Song[];
+    currentSong: Song | null;
+    selectedSong: Song | null;
+    likedSongIds: Set<string>;
+    isPlaying: boolean;
+    referenceTracks?: { id: string; filename: string; audio_url: string; duration?: number | null; created_at?: string }[];
+    onPlay: (song: Song) => void;
+    onSelect: (song: Song) => void;
+    onToggleLike: (songId: string) => void;
+    onAddToPlaylist: (song: Song) => void;
+    onOpenVideo?: (song: Song) => void;
+    onShowDetails?: (song: Song) => void;
+    onNavigateToProfile?: (username: string) => void;
+    onReusePrompt?: (song: Song) => void;
+    onDelete?: (song: Song) => void;
+    onSongUpdate?: (updatedSong: Song) => void;
+    onDeleteMany?: (songs: Song[]) => void;
+    onUseAsReference?: (song: Song) => void;
+    onCoverSong?: (song: Song) => void;
+    onUseUploadAsReference?: (track: { audio_url: string; filename: string }) => void;
+    onCoverUpload?: (track: { audio_url: string; filename: string }) => void;
+    isLoading?: boolean;
+    isLoadingMore?: boolean;
+    hasMore?: boolean;
+    totalSongs?: number | null;
+    onLoadMore?: () => void;
+}
+
+// ... existing code ...
+
+
+
+// Define Filter Types
+type FilterType = 'liked' | 'public' | 'private' | 'generating';
+
+// Map model ID to short display name
+const getModelDisplayName = (modelId?: string): string => {
+    if (!modelId) return 'ACE';
+    
+    const mapping: Record<string, string> = {
+        'acestep-v15-base': '1.5B',
+        'acestep-v15-sft': '1.5S',
+        'acestep-v15-turbo-shift1': '1.5TS1',
+        'acestep-v15-turbo-shift3': '1.5TS3',
+        'acestep-v15-turbo-continuous': '1.5TC',
+        'acestep-v15-turbo': '1.5T',
+        'acestep-v15-xl-turbo': '1.5XL-T',
+    };
+    return mapping[modelId] || modelId.replace(/^acestep-/, '').replace(/^v/, '').toUpperCase();
+};
+
+const getSongModelId = (song: Song): string | undefined => {
+    return song.ditModel || song.generationParams?.ditModel || song.generationParams?.dit_model;
+};
+
+const getExplicitDynamicLyricsFlag = (song: Song): boolean | undefined => {
+    const record = song as Song & Record<string, unknown>;
+    const params = (song.generationParams || {}) as Record<string, unknown>;
+    const explicitSyncedFlag =
+        record.hasSyncedLyrics ??
+        record.has_synced_lyrics ??
+        params.hasSyncedLyrics ??
+        params.has_synced_lyrics ??
+        params.syncedLyrics;
+
+    if (typeof explicitSyncedFlag === 'boolean') {
+        return explicitSyncedFlag;
+    }
+
+    return undefined;
+};
+
+const shouldProbeDynamicLyrics = (song: Song): boolean => {
+    const params = (song.generationParams || {}) as Record<string, unknown>;
+    return Boolean(song.audioUrl && (params.getLrc || params.get_lrc));
+};
+
+const getSyncedLyricsUrl = (song: Song): string | undefined => {
+    if (!song.audioUrl) return undefined;
+    return song.audioUrl.replace(/\.[^/.]+$/, '.lrc');
+};
+
+const getSongScorePayload = (song: Song): unknown => {
+    const record = song as Song & Record<string, unknown>;
+    return record.scores
+        || record.scoreDetails
+        || record.score_details
+        || song.generationParams?.scores
+        || song.generationParams?.scoreDetails
+        || song.generationParams?.score_details
+        || song.generationParams?.score;
+};
+
+const hasRequestedScores = (song: Song): boolean => {
+    return Boolean(song.generationParams?.getScores || song.generationParams?.get_scores || getSongScorePayload(song));
+};
+
+const formatScorePayload = (value: unknown): string => {
+    if (value === undefined || value === null || value === '') {
+        return 'Score output was requested, but no scorer payload was saved for this song.';
+    }
+    if (typeof value === 'string') {
+        return value
+            .replace(/^DiT Lyric Alignment Scores\s*\(Python fallback\)/i, 'Lyric Alignment Scores')
+            .replace(/\n?Sensitivity:\s*[\d.]+\s*$/i, '')
+            .trim();
+    }
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch {
+        return String(value);
+    }
+};
+
+type ParsedLyricAlignmentScore = {
+    globalScore?: string;
+    lmScore: string;
+    ditScore: string;
+    note?: string;
+};
+
+const parseLyricAlignmentScore = (text: string): ParsedLyricAlignmentScore | null => {
+    const globalMatch = text.match(/Global Quality Score:\s*([0-9.]+)/i);
+    const lmMatch = text.match(/LM lyrics alignment score:\s*([0-9.]+)/i);
+    const ditMatch = text.match(/DiT lyrics alignment score:\s*([0-9.]+)/i);
+    if (!lmMatch || !ditMatch) return null;
+
+    const noteMatch = text.match(/Global PMI quality score[^\n]+(?:\n[^\n]+)?/i);
+    return {
+        globalScore: globalMatch?.[1],
+        lmScore: lmMatch[1],
+        ditScore: ditMatch[1],
+        note: noteMatch?.[0],
+    };
+};
+
+const TooltipInfo: React.FC<{ text: string; align?: 'left' | 'right' }> = ({ text, align = 'left' }) => (
+    <span className="relative inline-flex group">
+        <Info size={13} className="text-zinc-400 group-hover:text-zinc-200 transition-colors" />
+        <span
+            className={`pointer-events-none absolute bottom-full z-[120] mb-2 hidden w-64 max-w-[min(16rem,calc(100vw-3rem))] rounded-md border border-zinc-200 bg-white px-3 py-2 text-left text-[11px] font-medium leading-relaxed text-zinc-700 shadow-xl group-hover:block dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200 ${
+                align === 'right' ? 'right-0 -translate-x-2' : 'left-0 translate-x-2'
+            }`}
+        >
+            {text}
+        </span>
+    </span>
+);
+
+const NowPlayingBars: React.FC<{ active: boolean }> = ({ active }) => (
+    <div className="flex w-5 flex-shrink-0 items-center justify-center">
+        {active && (
+            <div className="flex h-5 items-end gap-[2px] text-[#1ed760]" aria-label="Now playing">
+                {[0.78, 1.12, 0.9, 1.22, 0.72].map((height, index) => (
+                    <span
+                        key={index}
+                        className="w-[2px] bg-current music-bar-anim"
+                        style={{
+                            '--music-bar-max': `${height}rem`,
+                            animationDuration: `${0.62 + index * 0.05}s`,
+                            animationDelay: `${-index * 0.11}s`,
+                        } as React.CSSProperties}
+                    />
+                ))}
+            </div>
+        )}
+    </div>
+);
+
+const formatElapsedTime = (start: Date, now: number): string => {
+    const startMs = start.getTime();
+    if (!Number.isFinite(startMs)) return '0:00';
+    const elapsedSec = Math.max(0, Math.floor((now - startMs) / 1000));
+    const minutes = Math.floor(elapsedSec / 60);
+    const seconds = elapsedSec % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+};
+
+const getGenerationStatusText = (song: Song, now: number): string => {
+    if (song.queuePosition) return `Queued #${song.queuePosition}`;
+    const stage = song.stage?.trim() || 'Creating audio';
+    return `${stage} · ${formatElapsedTime(song.createdAt, now)}`;
+};
+
+const createDragPreview = (element: HTMLElement) => {
+    const clone = element.cloneNode(true) as HTMLElement;
+    clone.style.width = `${element.offsetWidth}px`;
+    clone.style.position = 'fixed';
+    clone.style.top = '-1000px';
+    clone.style.left = '-1000px';
+    clone.style.pointerEvents = 'none';
+    clone.style.opacity = '0.95';
+
+    const badge = document.createElement('div');
+    badge.textContent = '+';
+    badge.style.position = 'absolute';
+    badge.style.left = '8px';
+    badge.style.bottom = '8px';
+    badge.style.width = '24px';
+    badge.style.height = '24px';
+    badge.style.display = 'flex';
+    badge.style.alignItems = 'center';
+    badge.style.justifyContent = 'center';
+    badge.style.borderRadius = '9999px';
+    badge.style.background = '#22c55e';
+    badge.style.color = 'white';
+    badge.style.boxShadow = '0 6px 16px rgba(0,0,0,0.25)';
+    badge.style.fontSize = '16px';
+    badge.style.lineHeight = '1';
+    clone.style.position = 'relative';
+    clone.appendChild(badge);
+
+    document.body.appendChild(clone);
+    return clone;
+};
+
+export const SongList: React.FC<SongListProps> = ({
+    songs,
+    currentSong,
+    selectedSong,
+    likedSongIds,
+    isPlaying,
+    referenceTracks = [],
+    onPlay,
+    onSelect,
+    onToggleLike,
+    onAddToPlaylist,
+    onOpenVideo,
+    onShowDetails,
+    onNavigateToProfile,
+    onReusePrompt,
+    onDelete,
+    onSongUpdate,
+    onDeleteMany,
+    onUseAsReference,
+    onCoverSong,
+    onUseUploadAsReference,
+    onCoverUpload,
+    isLoading = false,
+    isLoadingMore = false,
+    hasMore = false,
+    totalSongs = null,
+    onLoadMore
+}) => {
+    const { user } = useAuth();
+    const { t } = useI18n();
+    const [searchQuery, setSearchQuery] = useState('');
+    const [activeFilters, setActiveFilters] = useState<Set<FilterType>>(new Set());
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [isSelecting, setIsSelecting] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [now, setNow] = useState(() => Date.now());
+    const filterRef = useRef<HTMLDivElement>(null);
+    const loadMoreRef = useRef(onLoadMore);
+
+    useEffect(() => {
+        loadMoreRef.current = onLoadMore;
+    }, [onLoadMore]);
+
+    const FILTERS: { id: FilterType; label: string; icon: React.ReactNode }[] = [
+        { id: 'liked', label: t('liked'), icon: <ThumbsUp size={16} /> },
+        { id: 'public', label: t('public'), icon: <Globe size={16} /> },
+        { id: 'private', label: t('private'), icon: <Lock size={16} /> },
+        { id: 'generating', label: t('generatingStatus'), icon: <Loader2 size={16} /> }
+    ];
+
+    // Close filter dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
+                setIsFilterOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    useEffect(() => {
+        setSelectedIds(prev => {
+            if (prev.size === 0) return prev;
+            const validIds = new Set(songs.map(song => song.id));
+            const next = new Set<string>();
+            prev.forEach(id => {
+                if (validIds.has(id)) next.add(id);
+            });
+            return next;
+        });
+    }, [songs]);
+
+    useEffect(() => {
+        if (!songs.some(song => song.isGenerating)) return;
+        const interval = window.setInterval(() => setNow(Date.now()), 1000);
+        return () => window.clearInterval(interval);
+    }, [songs]);
+
+    const toggleFilter = (filterId: FilterType) => {
+        setActiveFilters(prev => {
+            const newFilters = new Set(prev);
+            if (newFilters.has(filterId)) {
+                newFilters.delete(filterId);
+            } else {
+                newFilters.add(filterId);
+            }
+            return newFilters;
+        });
+    };
+
+    const filteredSongs = useMemo(() => {
+        const normalizedQuery = searchQuery.toLowerCase();
+        return songs.filter(song => {
+            const songCaption = getSongCaption(song);
+            const songTags = getSongTags(song);
+            // 1. Search Logic
+            const matchesSearch =
+                (song.title || '').toLowerCase().includes(normalizedQuery) ||
+                songCaption.toLowerCase().includes(normalizedQuery) ||
+                songTags.some(tag => tag.toLowerCase().includes(normalizedQuery));
+
+            if (!matchesSearch) return false;
+
+            // 2. Filter Logic
+            if (activeFilters.size === 0) return true;
+
+            if (activeFilters.has('liked') && !likedSongIds.has(song.id)) return false;
+            if (activeFilters.has('public') && !song.isPublic) return false;
+            if (activeFilters.has('private') && song.isPublic) return false;
+            if (activeFilters.has('generating') && !song.isGenerating) return false;
+
+            return true;
+        });
+    }, [songs, searchQuery, activeFilters, likedSongIds]);
+
+    const filteredUploads = useMemo(() => {
+        if (activeFilters.size > 0) return [];
+        if (!referenceTracks.length) return [];
+        return referenceTracks.filter(track => {
+            const title = track.filename.replace(/\.[^/.]+$/, '');
+            return title.toLowerCase().includes(searchQuery.toLowerCase());
+        });
+    }, [referenceTracks, searchQuery, activeFilters]);
+
+    const listItems = useMemo(() => {
+        const songItems = filteredSongs.map(song => ({
+            type: 'song' as const,
+            id: song.id,
+            createdAt: song.createdAt,
+            song
+        }));
+        const uploadItems = filteredUploads.map(track => ({
+            type: 'upload' as const,
+            id: track.id,
+            createdAt: new Date(track.created_at || Date.now()),
+            track
+        }));
+        return [...songItems, ...uploadItems].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    }, [filteredSongs, filteredUploads]);
+
+    const selectableSongs = useMemo(
+        () => filteredSongs.filter(song => !song.isGenerating),
+        [filteredSongs]
+    );
+
+    const allSelected = selectableSongs.length > 0 && selectableSongs.every(song => selectedIds.has(song.id));
+    const selectedSongs = selectableSongs.filter(song => selectedIds.has(song.id));
+
+    const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
+        if (!hasMore || isLoading || isLoadingMore || !loadMoreRef.current) return;
+        const target = event.currentTarget;
+        const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
+        if (remaining < 700) {
+            loadMoreRef.current();
+        }
+    };
+
+    return (
+        <div
+            className="flex-1 bg-white dark:bg-black h-full overflow-y-auto custom-scrollbar p-6 pb-32 transition-colors duration-300"
+            onScroll={handleScroll}
+        >
+            <div className="max-w-5xl mx-auto w-full"> {/* Container constraint */}
+
+                {/* Header */}
+                <div className="flex flex-col gap-6 mb-8">
+                    <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                        <span className="hover:text-black dark:hover:text-white cursor-pointer transition-colors">Workspaces</span>
+                        <span className="text-zinc-400 dark:text-zinc-600">›</span>
+                        <span className="text-zinc-900 dark:text-white font-medium">My Workspace</span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        <div className="relative group flex-1">
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder={t('searchYourSongs')}
+                                className="w-full bg-zinc-100 dark:bg-[#121214] border border-zinc-200 dark:border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 dark:focus:border-white/20 placeholder-zinc-500 dark:placeholder-zinc-600 transition-colors"
+                            />
+                            <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-3 group-focus-within:text-black dark:group-focus-within:text-white transition-colors" />
+                        </div>
+
+                        <div className="relative" ref={filterRef}>
+                            <button
+                                onClick={() => setIsFilterOpen(!isFilterOpen)}
+                                className={`
+                        border text-xs font-bold px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all select-none
+                        ${isFilterOpen || activeFilters.size > 0
+                                        ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-transparent'
+                                        : 'bg-zinc-100 dark:bg-[#121214] hover:bg-zinc-200 dark:hover:bg-white/5 border-zinc-200 dark:border-white/10 text-zinc-700 dark:text-white'
+                                    }
+                    `}
+                            >
+                                <Filter size={14} fill={activeFilters.size > 0 ? "currentColor" : "none"} />
+                                <span>{t('filters')} {activeFilters.size > 0 && `(${activeFilters.size})`}</span>
+                            </button>
+
+                            {/* Filter Dropdown */}
+                            {isFilterOpen && (
+                                <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden py-1 z-50 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+                                    <div className="px-3 py-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                                        {t('refineBy')}
+                                    </div>
+                                    {FILTERS.map(filter => (
+                                        <button
+                                            key={filter.id}
+                                            onClick={() => toggleFilter(filter.id)}
+                                            className="w-full text-left px-4 py-2.5 flex items-center justify-between hover:bg-zinc-100 dark:hover:bg-white/5 transition-colors group"
+                                        >
+                                            <div className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-300 group-hover:text-black dark:group-hover:text-white">
+                                                <span className="text-zinc-400 dark:text-zinc-500 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors">
+                                                    {filter.icon}
+                                                </span>
+                                                {filter.label}
+                                            </div>
+                                            <div className={`
+                                     w-4 h-4 rounded border flex items-center justify-center transition-all
+                                     ${activeFilters.has(filter.id)
+                                                    ? 'bg-[#8fb68f] border-[#8fb68f]'
+                                                    : 'border-zinc-300 dark:border-zinc-600 group-hover:border-zinc-400 dark:group-hover:border-zinc-500'
+                                                }
+                                 `}>
+                                                {activeFilters.has(filter.id) && <Check size={10} className="text-white" strokeWidth={4} />}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <button
+                            onClick={() => {
+                                setIsSelecting(prev => !prev);
+                                setSelectedIds(new Set());
+                            }}
+                            className={`border text-xs font-bold px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all select-none ${isSelecting
+                                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-transparent'
+                                    : 'bg-zinc-100 dark:bg-[#121214] hover:bg-zinc-200 dark:hover:bg-white/5 border-zinc-200 dark:border-white/10 text-zinc-700 dark:text-white'
+                                }`}
+                        >
+                            Select
+                        </button>
+                    </div>
+                </div>
+
+                {isSelecting && (
+                    <div className="sticky top-3 z-30 mb-8 flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-zinc-50/95 px-4 py-3 shadow-lg shadow-black/5 backdrop-blur dark:border-white/10 dark:bg-zinc-950/95 dark:shadow-black/20">
+                        <div className="text-sm text-zinc-600 dark:text-zinc-300">
+                            {selectedSongs.length} selected
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => {
+                                    const next = new Set<string>();
+                                    if (!allSelected) {
+                                        selectableSongs.forEach(song => next.add(song.id));
+                                    }
+                                    setSelectedIds(next);
+                                }}
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-white/20"
+                            >
+                                {allSelected ? 'Clear all' : 'Select all'}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (!selectedSongs.length) return;
+                                    onDeleteMany?.(selectedSongs);
+                                    setSelectedIds(new Set());
+                                    setIsSelecting(false);
+                                }}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${selectedSongs.length
+                                        ? 'border-red-500 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10'
+                                        : 'border-zinc-200 dark:border-white/10 text-zinc-400 cursor-not-allowed'
+                                    }`}
+                                disabled={!selectedSongs.length}
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* List */}
+                <div className="space-y-2"> {/* Reduced vertical spacing */}
+                    {isLoading ? (
+                        <div className="space-y-2">
+                            {Array.from({ length: 8 }).map((_, index) => (
+                                <div
+                                    key={index}
+                                    className="flex items-center gap-4 rounded-lg border border-transparent p-2"
+                                >
+                                    <div className="h-16 w-16 flex-shrink-0 rounded-md bg-zinc-100 dark:bg-white/5 animate-pulse" />
+                                    <div className="min-w-0 flex-1 space-y-2">
+                                        <div className="h-4 w-2/5 rounded bg-zinc-100 dark:bg-white/5 animate-pulse" />
+                                        <div className="h-3 w-24 rounded bg-zinc-100 dark:bg-white/5 animate-pulse" />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : listItems.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-64 text-zinc-500 space-y-4 border border-dashed border-zinc-200 dark:border-white/5 rounded-2xl bg-zinc-50 dark:bg-white/[0.02]">
+                            <div className="w-16 h-16 rounded-full bg-zinc-100 dark:bg-white/5 flex items-center justify-center">
+                                <Filter size={32} />
+                            </div>
+                            <p className="font-medium">{t('noSongsMatchFilters')}</p>
+                            <button
+                                onClick={() => { setActiveFilters(new Set()); setSearchQuery(''); }}
+                                className="text-[#6f8f72] dark:text-[#a8c9a4] text-sm font-bold hover:underline"
+                            >
+                                {t('clearFilters')}
+                            </button>
+                        </div>
+                    ) : (
+                        listItems.map((item) => (
+                            item.type === 'song' ? (
+                                <SongItem
+                                    key={item.id}
+                                    song={item.song}
+                                    isCurrent={currentSong?.id === item.song.id}
+                                    isSelected={selectedSong?.id === item.song.id}
+                                    isSelectionMode={isSelecting}
+                                    isChecked={selectedIds.has(item.song.id)}
+                                    isLiked={likedSongIds.has(item.song.id)}
+                                    isPlaying={isPlaying}
+                                    isOwner={user?.id === item.song.userId}
+                                    now={now}
+                                    onPlay={() => onPlay(item.song)}
+                                    onSelect={() => onSelect(item.song)}
+                                    onToggleSelect={() => {
+                                        if (item.song.isGenerating) return;
+                                        setSelectedIds(prev => {
+                                            const next = new Set(prev);
+                                            if (next.has(item.song.id)) next.delete(item.song.id);
+                                            else next.add(item.song.id);
+                                            return next;
+                                        });
+                                    }}
+                                    onToggleLike={() => onToggleLike(item.song.id)}
+                                    onAddToPlaylist={() => onAddToPlaylist(item.song)}
+                                    onOpenVideo={() => onOpenVideo && onOpenVideo(item.song)}
+                                    onShowDetails={() => onShowDetails && onShowDetails(item.song)}
+                                    onNavigateToProfile={onNavigateToProfile}
+                                    onReusePrompt={() => onReusePrompt?.(item.song)}
+                                    onDelete={() => onDelete?.(item.song)}
+                                    onSongUpdate={onSongUpdate}
+                                    onUseAsReference={() => onUseAsReference?.(item.song)}
+                                    onCoverSong={() => onCoverSong?.(item.song)}
+                                />
+                            ) : (
+                                <UploadItem
+                                    key={`upload_${item.id}`}
+                                    track={item.track}
+                                    onPlay={(audioUrl, title) => {
+                                        onPlay({
+                                            id: `upload_${item.id}`,
+                                            title,
+                                            lyrics: '',
+                                            style: 'Upload',
+                                            coverUrl: '',
+                                            duration: '0:00',
+                                            createdAt: item.createdAt,
+                                            tags: [],
+                                            audioUrl,
+                                            isPublic: false,
+                                        } as Song);
+                                    }}
+                                    onUseAsReference={() => onUseUploadAsReference?.(item.track)}
+                                    onCoverSong={() => onCoverUpload?.(item.track)}
+                                />
+                            )
+                        ))
+                    )}
+                </div>
+
+                {!isLoading && (hasMore || isLoadingMore) && (
+                    <div className="flex justify-center pt-6">
+                        <button
+                            type="button"
+                            onClick={() => onLoadMore?.()}
+                            disabled={isLoadingMore}
+                            className="inline-flex items-center gap-2 rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 px-4 py-2 text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                        >
+                            {isLoadingMore && <Loader2 size={14} className="animate-spin" />}
+                            {isLoadingMore
+                                ? 'Loading more songs...'
+                                : totalSongs && songs.length < totalSongs
+                                    ? `Load more (${songs.length}/${totalSongs})`
+                                    : 'Load more songs'}
+                        </button>
+                    </div>
+                )}
+            </div> {/* End container */}
+        </div>
+    );
+};
+
+interface SongItemProps {
+    song: Song;
+    isCurrent: boolean;
+    isSelected: boolean;
+    isSelectionMode: boolean;
+    isChecked: boolean;
+    isLiked: boolean;
+    isPlaying: boolean;
+    isOwner: boolean;
+    now: number;
+    onPlay: () => void;
+    onSelect: () => void;
+    onToggleSelect: () => void;
+    onToggleLike: () => void;
+    onAddToPlaylist: () => void;
+    onOpenVideo?: () => void;
+    onShowDetails?: () => void;
+    onNavigateToProfile?: (username: string) => void;
+    onReusePrompt?: () => void;
+    onDelete?: () => void;
+    onSongUpdate?: (updatedSong: Song) => void;
+    onUseAsReference?: () => void;
+    onCoverSong?: () => void;
+}
+
+const SongItem: React.FC<SongItemProps> = ({
+    song,
+    isCurrent,
+    isSelected,
+    isSelectionMode,
+    isChecked,
+    isLiked,
+    isPlaying,
+    isOwner,
+    now,
+    onPlay,
+    onSelect,
+    onToggleSelect,
+    onToggleLike,
+    onAddToPlaylist,
+    onOpenVideo,
+    onShowDetails,
+    onNavigateToProfile,
+    onReusePrompt,
+    onDelete,
+    onSongUpdate,
+    onUseAsReference,
+    onCoverSong
+}) => {
+    const { token } = useAuth();
+    const hasMeasuredProgress = typeof song.progress === 'number' && song.progress > 0;
+    const [showDropdown, setShowDropdown] = useState(false);
+    const [scoreModalOpen, setScoreModalOpen] = useState(false);
+    const [imageError, setImageError] = useState(false);
+    const [isEditingTitle, setIsEditingTitle] = useState(false);
+    const [editedTitle, setEditedTitle] = useState(song.title);
+    const titleInputRef = useRef<HTMLInputElement>(null);
+    const explicitDynamicLyrics = getExplicitDynamicLyricsFlag(song);
+    const [hasVerifiedDynamicLyrics, setHasVerifiedDynamicLyrics] = useState(explicitDynamicLyrics === true);
+    const scorePayload = getSongScorePayload(song);
+    const scoreRequested = hasRequestedScores(song);
+    const formattedScorePayload = formatScorePayload(scorePayload);
+    const lyricAlignmentScore = parseLyricAlignmentScore(formattedScorePayload);
+
+    useEffect(() => {
+        setImageError(false);
+    }, [song.id, song.coverUrl]);
+
+    useEffect(() => {
+        if (explicitDynamicLyrics !== undefined) {
+            setHasVerifiedDynamicLyrics(explicitDynamicLyrics);
+            return;
+        }
+
+        if (!shouldProbeDynamicLyrics(song)) {
+            setHasVerifiedDynamicLyrics(false);
+            return;
+        }
+
+        const lyricsUrl = getSyncedLyricsUrl(song);
+        if (!lyricsUrl) {
+            setHasVerifiedDynamicLyrics(false);
+            return;
+        }
+
+        const controller = new AbortController();
+        setHasVerifiedDynamicLyrics(false);
+
+        fetch(lyricsUrl, { cache: 'force-cache', signal: controller.signal })
+            .then(response => {
+                if (!controller.signal.aborted) {
+                    setHasVerifiedDynamicLyrics(response.ok);
+                }
+            })
+            .catch(() => {
+                if (!controller.signal.aborted) {
+                    setHasVerifiedDynamicLyrics(false);
+                }
+            });
+
+        return () => controller.abort();
+    }, [song, explicitDynamicLyrics]);
+
+    useEffect(() => {
+        if (isEditingTitle && titleInputRef.current) {
+            titleInputRef.current.focus();
+            titleInputRef.current.select();
+        }
+    }, [isEditingTitle]);
+
+    const handleSaveTitle = async () => {
+        if (!token || !isOwner || !editedTitle.trim() || editedTitle === song.title) {
+            setIsEditingTitle(false);
+            setEditedTitle(song.title);
+            return;
+        }
+
+        try {
+            const response = await songsApi.updateSong(song.id, { title: editedTitle.trim() }, token);
+            setIsEditingTitle(false);
+            // Update the parent component's song list
+            if (onSongUpdate && response.song) {
+                onSongUpdate({
+                    ...song,
+                    ...response.song,
+                    title: response.song.title ?? editedTitle.trim(),
+                    creator: response.song.creator ?? song.creator,
+                    creator_avatar: response.song.creator_avatar ?? song.creator_avatar,
+                    ditModel: response.song.ditModel ?? response.song.dit_model ?? song.ditModel,
+                    generationParams: response.song.generationParams ?? response.song.generation_params ?? song.generationParams,
+                    tags: response.song.tags ?? song.tags,
+                });
+            }
+        } catch (error) {
+            console.error('Failed to update title:', error);
+            setEditedTitle(song.title);
+            setIsEditingTitle(false);
+        }
+    };
+
+    const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            handleSaveTitle();
+        } else if (e.key === 'Escape') {
+            setEditedTitle(song.title);
+            setIsEditingTitle(false);
+        }
+    };
+
+    return (
+        <>
+        <div
+            onClick={onSelect}
+            draggable={Boolean(song.audioUrl) && !song.isGenerating}
+            onDragStart={(e) => {
+                if (!song.audioUrl || song.isGenerating) return;
+                e.dataTransfer.effectAllowed = 'copy';
+                e.dataTransfer.setData('application/x-ace-audio', JSON.stringify({
+                    url: song.audioUrl,
+                    title: song.title || 'Untitled',
+                    source: 'song',
+                }));
+                const preview = createDragPreview(e.currentTarget);
+                const rect = e.currentTarget.getBoundingClientRect();
+                const offsetX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+                const offsetY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+                e.dataTransfer.setDragImage(preview, offsetX, offsetY);
+                setTimeout(() => {
+                    try {
+                        preview.remove();
+                    } catch {
+                        // ignore
+                    }
+                }, 0);
+            }}
+            className={`group relative flex items-center gap-4 p-2 pr-14 rounded-lg hover:bg-zinc-100 dark:hover:bg-[#18181b] transition-all cursor-pointer border ${isSelected ? 'bg-zinc-100 dark:bg-[#18181b] border-zinc-200 dark:border-white/10' : 'border-transparent bg-transparent'} ${song.audioUrl && !song.isGenerating ? 'cursor-grab active:cursor-grabbing' : ''}`}
+        >
+            {isSelectionMode && (
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleSelect();
+                    }}
+                    className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isChecked
+                            ? 'bg-[#8fb68f] border-[#8fb68f] text-[#132018]'
+                            : 'border-zinc-300 dark:border-zinc-600 text-transparent hover:border-zinc-400 dark:hover:border-zinc-500'
+                        } ${song.isGenerating ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    disabled={song.isGenerating}
+                    aria-pressed={isChecked}
+                >
+                    <Check size={12} strokeWidth={3} className={isChecked ? 'text-white' : 'text-transparent'} />
+                </button>
+            )}
+
+            <NowPlayingBars active={Boolean(isCurrent && isPlaying && !song.isGenerating)} />
+
+            {/* Cover Art - Reduced size */}
+            <div className="relative w-16 h-16 flex-shrink-0 rounded-md bg-zinc-200 dark:bg-zinc-800 overflow-hidden shadow-sm group/image">
+                {/* Use gradient fallback if no coverUrl or image fails to load */}
+                {(!song.coverUrl || imageError) ? (
+                    <AlbumCover seed={song.id || song.title} size="full" className={`w-full h-full ${song.isGenerating ? 'opacity-20 blur-sm' : 'opacity-100'}`} />
+                ) : (
+                    <img
+                        src={song.coverUrl}
+                        alt={song.title}
+                        className={`w-full h-full object-cover transition-opacity ${song.isGenerating ? 'opacity-20 blur-sm' : 'opacity-100'}`}
+                        onError={() => setImageError(true)}
+                    />
+                )}
+
+                {song.isGenerating ? (
+                    <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-1">
+                        {song.queuePosition ? (
+                            /* Queue indicator */
+                            <>
+                                <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
+                                    <Clock size={16} className="text-amber-400" />
+                                </div>
+                                <span className="text-[10px] font-medium text-amber-400">Queue #{song.queuePosition}</span>
+                            </>
+                        ) : (
+                            /* Generating - Music Waveform Animation */
+                            <div className="flex items-end gap-1 h-6">
+                                <div className="w-1 bg-[#8fb68f] rounded-full music-bar-anim" style={{ animationDelay: '0.0s' }}></div>
+                                <div className="w-1 bg-[#8fb68f] rounded-full music-bar-anim" style={{ animationDelay: '0.2s' }}></div>
+                                <div className="w-1 bg-[#8fb68f] rounded-full music-bar-anim" style={{ animationDelay: '0.4s' }}></div>
+                                <div className="w-1 bg-[#8fb68f] rounded-full music-bar-anim" style={{ animationDelay: '0.1s' }}></div>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div
+                        className="absolute inset-0 bg-black/40 flex items-center justify-center backdrop-blur-[1px] cursor-pointer opacity-0 group-hover/image:opacity-100 focus-within:opacity-100 transition-opacity duration-200"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onPlay();
+                        }}
+                    >
+                        <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-lg transform transition-transform hover:scale-105">
+                            {isCurrent && isPlaying ? (
+                                <Pause fill="black" className="text-black w-5 h-5" />
+                            ) : (
+                                <Play fill="black" className="text-black ml-1 w-5 h-5" />
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 min-w-0 flex flex-col justify-center py-1">
+                <div className="flex items-center gap-2">
+                    {isEditingTitle && isOwner ? (
+                        <input
+                            ref={titleInputRef}
+                            type="text"
+                            value={editedTitle}
+                            onChange={(e) => setEditedTitle(e.target.value)}
+                            onBlur={handleSaveTitle}
+                            onKeyDown={handleTitleKeyDown}
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-bold text-lg bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded border border-[#8fb68f] focus:outline-none text-zinc-900 dark:text-white min-w-0 flex-1"
+                        />
+                    ) : (
+                        <h3
+                            className={`min-w-0 font-bold text-lg truncate ${isCurrent ? 'text-[#6f8f72] dark:text-[#a8c9a4]' : 'text-zinc-900 dark:text-white'} ${isOwner && !song.isGenerating ? 'cursor-pointer hover:underline' : ''}`}
+                            onClick={(e) => {
+                                if (isOwner && !song.isGenerating) {
+                                    e.stopPropagation();
+                                    setIsEditingTitle(true);
+                                }
+                            }}
+                        >
+                            {song.title || (song.isGenerating ? (song.queuePosition ? "Queued..." : "Creating...") : "Untitled")}
+                        </h3>
+                    )}
+                    <span
+                        className="inline-flex shrink-0 items-center justify-center text-[9px] font-bold text-[#16301f] bg-[#8fbc8f] border border-[#a7cda6] px-1.5 py-0.5 rounded-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]"
+                        title={`DiT model: ${getSongModelId(song) || 'unknown'}`}
+                    >
+                        {getModelDisplayName(getSongModelId(song))}
+                    </span>
+                    {hasVerifiedDynamicLyrics && (
+                        <span
+                            className="inline-flex shrink-0 items-center gap-1 text-[9px] font-bold text-[#24412f] bg-[#c7d8c9] border border-[#d9e4d9] px-1.5 py-0.5 rounded-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] dark:text-[#dcebdd] dark:bg-[#8fb68f]/20 dark:border-[#8fb68f]/35"
+                            title="Synced lyrics available in fullscreen"
+                        >
+                            <Mic2 size={10} strokeWidth={2.5} />
+                            LRC
+                        </span>
+                    )}
+                    {song.isPublic === false && (
+                        <Lock size={12} className="text-zinc-400 dark:text-zinc-500" />
+                    )}
+                </div>
+                <div className="flex items-center gap-2 mt-1.5">
+                    <div
+                        className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (song.creator && onNavigateToProfile) {
+                                onNavigateToProfile(song.creator);
+                            }
+                        }}
+                    >
+                        <div className="w-4 h-4 rounded-full bg-zinc-100 dark:bg-zinc-900 text-[8px] flex items-center justify-center font-bold text-white overflow-hidden border border-zinc-200 dark:border-white/10">
+                            <img src={getAvatarUrl(song.creator_avatar, song.creator)} alt={song.creator || 'Unknown'} className="w-full h-full object-cover" />
+                        </div>
+                        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors hover:underline">
+                            {song.creator || 'Unknown'}
+                        </span>
+                    </div>
+                </div>
+                {song.isGenerating && (
+                    <div className="pt-2 max-w-2xl">
+                        <div className="flex items-center justify-between gap-3 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+                            <span className="truncate">
+                                {getGenerationStatusText(song, now)}
+                            </span>
+                            {hasMeasuredProgress && (
+                                <span className="font-mono text-zinc-400 dark:text-zinc-500 flex-shrink-0">
+                                    {Math.round(Math.min(1, Math.max(0, song.progress)) * 100)}%
+                                </span>
+                            )}
+                        </div>
+                        <div className="h-1 rounded-full bg-zinc-200/70 dark:bg-white/10 overflow-hidden">
+                            <div
+                                className={`h-full bg-[#8fbc8f] transition-all ${!hasMeasuredProgress ? 'opacity-40 animate-pulse' : ''}`}
+                                style={{
+                                    width: !hasMeasuredProgress
+                                        ? '18%'
+                                        : `${Math.min(100, Math.max(0, song.progress * 100))}%`,
+                                }}
+                            />
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Actions - Hidden while generating */}
+            {!song.isGenerating && (
+                <div className="flex shrink-0 items-center gap-2 pr-1">
+                    <button
+                        className={`flex items-center gap-1 px-2.5 py-2 rounded-full transition-all ${isLiked ? 'opacity-100 text-[#6f8f72] dark:text-[#a8c9a4] bg-[#9bb89d]/15 dark:bg-[#9bb89d]/10' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-zinc-400 hover:bg-zinc-200 hover:text-black dark:hover:bg-white/5 dark:hover:text-white'}`}
+                        onClick={(e) => { e.stopPropagation(); onToggleLike(); }}
+                        aria-label={isLiked ? 'Unlike song' : 'Like song'}
+                    >
+                        <ThumbsUp size={16} fill={isLiked ? "currentColor" : "none"} />
+                        {(song.likeCount || 0) > 0 && (
+                            <span className="text-xs font-bold">{song.likeCount}</span>
+                        )}
+                    </button>
+
+                    {scoreRequested && (
+                        <button
+                            className="p-2 rounded-full hover:bg-zinc-200 dark:hover:bg-white/5 text-zinc-400 hover:text-black dark:hover:text-white transition-colors"
+                            onClick={(e) => { e.stopPropagation(); setScoreModalOpen(true); }}
+                            title="View scores"
+                        >
+                            <BarChart3 size={16} />
+                        </button>
+                    )}
+
+                    {/* Info Button - Visible only on small/medium screens where sidebar is hidden */}
+                    <button
+                        className="p-2 rounded-full hover:bg-zinc-200 dark:hover:bg-white/5 text-zinc-400 hover:text-black dark:hover:text-white transition-colors xl:hidden"
+                        onClick={(e) => { e.stopPropagation(); if (onShowDetails) onShowDetails(); }}
+                        title="Song Details"
+                    >
+                        <Info size={16} />
+                    </button>
+
+                    <div className="relative">
+                        <button
+                            className="p-2 rounded-full hover:bg-zinc-200 dark:hover:bg-white/5 text-zinc-400 hover:text-black dark:hover:text-white transition-colors"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setShowDropdown(!showDropdown);
+                            }}
+                        >
+                            <MoreHorizontal size={16} />
+                        </button>
+                        <SongDropdownMenu
+                            song={song}
+                            isOpen={showDropdown}
+                            onClose={() => setShowDropdown(false)}
+                            isOwner={isOwner}
+                            onCreateVideo={() => onOpenVideo?.()}
+                            onReusePrompt={onReusePrompt ? () => onReusePrompt?.(song) : undefined}
+                            onAddToPlaylist={() => onAddToPlaylist?.(song)}
+                            onDelete={() => onDelete?.(song)}
+                            onUseAsReference={() => onUseAsReference?.()}
+                            onCoverSong={() => onCoverSong?.()}
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* Timestamp */}
+            <div className="absolute right-4 top-3 text-xs font-mono text-zinc-500 dark:text-zinc-600">
+                {song.isGenerating ? (
+                    <span className={song.queuePosition ? 'text-amber-500' : 'text-[#8fbc8f]'}>
+                        {song.queuePosition ? `#${song.queuePosition}` : formatElapsedTime(song.createdAt, now)}
+                    </span>
+                ) : song.duration}
+            </div>
+        </div>
+
+        {scoreModalOpen && (
+            <div
+                className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+                onClick={() => setScoreModalOpen(false)}
+            >
+                <div
+                    className="w-full max-w-lg rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950 shadow-2xl overflow-visible"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-white/10">
+                        <div>
+                            <h3 className="text-sm font-bold text-zinc-900 dark:text-white">Scores</h3>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[22rem]">{song.title}</p>
+                        </div>
+                        <button
+                            className="p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors"
+                            onClick={() => setScoreModalOpen(false)}
+                            title="Close"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
+                    <div className="p-4 space-y-4">
+                        {lyricAlignmentScore ? (
+                            <>
+                                <div>
+                                    <div className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-white">
+                                        <span>Lyric Alignment</span>
+                                        <TooltipInfo text="A diagnostic score from ACE-Step. It estimates whether the generated vocal/lyric attention lines up with the provided lyrics. It is useful for comparing takes, not a final music-quality rating." />
+                                    </div>
+                                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                        Higher values usually mean the lyrics are more clearly aligned with the generated vocal timing.
+                                    </p>
+                                </div>
+                                <div className={`grid gap-2 ${lyricAlignmentScore.globalScore ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
+                                    {lyricAlignmentScore.globalScore && (
+                                        <div className="rounded-lg bg-zinc-100 dark:bg-white/5 p-3">
+                                            <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                                                <span>Global quality</span>
+                                                <TooltipInfo text="PMI-based quality score from ACE-Step. It estimates how well the generated audio codes match the prompt, lyrics, and metadata. Higher is usually better." />
+                                            </div>
+                                            <div className="text-2xl font-bold tracking-normal text-zinc-900 dark:text-white">{lyricAlignmentScore.globalScore}</div>
+                                        </div>
+                                    )}
+                                    <div className="rounded-lg bg-zinc-100 dark:bg-white/5 p-3">
+                                        <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                                            <span>LM alignment</span>
+                                            <TooltipInfo text="Alignment score measured from the lyric/text-side attention. It reflects how well lyric tokens are being tracked by the conditioning path." />
+                                        </div>
+                                        <div className="text-2xl font-bold tracking-normal text-zinc-900 dark:text-white">{lyricAlignmentScore.lmScore}</div>
+                                    </div>
+                                    <div className="rounded-lg bg-zinc-100 dark:bg-white/5 p-3">
+                                        <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                                            <span>DiT alignment</span>
+                                            <TooltipInfo
+                                                align="right"
+                                                text="Alignment score measured from the diffusion model's cross-attention. It is the closer signal for whether generated audio follows the lyric timing."
+                                            />
+                                        </div>
+                                        <div className="text-2xl font-bold tracking-normal text-zinc-900 dark:text-white">{lyricAlignmentScore.ditScore}</div>
+                                    </div>
+                                </div>
+                                {lyricAlignmentScore.note && (
+                                    <p className="rounded-lg bg-zinc-100 dark:bg-white/5 px-3 py-2 text-xs italic leading-relaxed text-zinc-500 dark:text-zinc-400">
+                                        *{lyricAlignmentScore.note}
+                                    </p>
+                                )}
+                            </>
+                        ) : (
+                            <pre className="max-h-72 overflow-auto rounded-lg bg-zinc-950 text-zinc-200 p-3 text-xs leading-relaxed whitespace-pre-wrap">
+                                {formattedScorePayload}
+                            </pre>
+                        )}
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
+    );
+};
+
+const UploadItem: React.FC<{
+    track: { id: string; filename: string; audio_url: string; duration?: number | null };
+    onPlay: (audioUrl: string, title: string) => void;
+    onUseAsReference?: () => void;
+    onCoverSong?: () => void;
+}> = ({ track, onPlay, onUseAsReference, onCoverSong }) => {
+    const title = track.filename.replace(/\.[^/.]+$/, '');
+    const duration = track.duration
+        ? `${Math.floor(track.duration / 60)}:${String(Math.floor(track.duration % 60)).padStart(2, '0')}`
+        : '--:--';
+    return (
+        <SongItem
+            song={{
+                id: `upload_${track.id}`,
+                title,
+                lyrics: '',
+                style: 'Upload',
+                coverUrl: '',
+                duration,
+                createdAt: new Date(),
+                tags: [],
+                audioUrl: track.audio_url,
+                isPublic: false,
+            } as Song}
+            isCurrent={false}
+            isSelected={false}
+            isSelectionMode={false}
+            isChecked={false}
+            isLiked={false}
+            isPlaying={false}
+            isOwner={false}
+            now={Date.now()}
+            onPlay={() => onPlay(track.audio_url, title)}
+            onSelect={() => onPlay(track.audio_url, title)}
+            onToggleSelect={() => undefined}
+            onToggleLike={() => undefined}
+            onAddToPlaylist={() => undefined}
+            onOpenVideo={() => undefined}
+            onShowDetails={() => undefined}
+            onNavigateToProfile={() => undefined}
+            onReusePrompt={undefined}
+            onDelete={() => undefined}
+            onUseAsReference={onUseAsReference}
+            onCoverSong={onCoverSong}
+        />
+    );
+};

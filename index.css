@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: none !important;
+}
+
+@keyframes song-lyrics-panel-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  68% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.006);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.song-lyrics-panel-enter {
+  transform-origin: 50% 18%;
+  animation: song-lyrics-panel-pop 240ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .song-lyrics-panel-enter {
+    animation: none;
+  }
+}
+
+@keyframes now-playing-slide-next {
+  0% {
+    transform: translateX(7rem);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes now-playing-slide-previous {
+  0% {
+    transform: translateX(-7rem);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.now-playing-slide-next {
+  animation: now-playing-slide-next 420ms cubic-bezier(0.22, 0.8, 0.22, 1) both;
+}
+
+.now-playing-slide-previous {
+  animation: now-playing-slide-previous 420ms cubic-bezier(0.22, 0.8, 0.22, 1) both;
+}
+
+@keyframes music-bar-bounce {
+  0%, 100% {
+    height: 0.3rem;
+  }
+  50% {
+    height: var(--music-bar-max, 1.05rem);
+  }
+}
+
+.music-bar-anim {
+  height: 0.3rem;
+  animation: music-bar-bounce 720ms ease-in-out infinite;
+}
+
+.caption-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: var(--caption-lines, 3);
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .now-playing-slide-next,
+  .now-playing-slide-previous,
+  .music-bar-anim {
+    animation: none;
+  }
+}
