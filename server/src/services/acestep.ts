@@ -439,9 +439,208 @@ interface ActiveJob {
   queuePosition?: number;
   progress?: number;
   stage?: string;
+  progressWindow?: {
+    start: number;
+    end: number;
+    expectedSeconds: number;
+    startedAt: number;
+  };
 }
 
 const activeJobs = new Map<string, ActiveJob>();
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function getExpectedCodegenSeconds(params: GenerationParams): number {
+  const duration = params.duration && params.duration > 0 ? params.duration : 120;
+  return Math.max(45, Math.min(360, duration * 0.9));
+}
+
+function getExpectedDiffusionSeconds(params: GenerationParams): number {
+  const duration = params.duration && params.duration > 0 ? params.duration : 120;
+  const steps = Math.max(1, Math.min(params.inferenceSteps ?? 8, 24));
+  return Math.max(18, Math.min(90, steps * 4 + duration / 12));
+}
+
+function getExpectedVaeSeconds(params: GenerationParams): number {
+  const duration = params.duration && params.duration > 0 ? params.duration : 120;
+  return Math.max(3, Math.min(18, 2 + duration / 45));
+}
+
+function setJobProgressWindow(
+  job: ActiveJob,
+  stage: string,
+  start: number,
+  end: number,
+  expectedSeconds: number,
+): void {
+  const safeStart = clamp01(start);
+  const safeEnd = clamp01(Math.max(end, safeStart));
+  job.stage = stage;
+  job.progress = Math.max(job.progress ?? 0, safeStart);
+  job.progressWindow = {
+    start: safeStart,
+    end: safeEnd,
+    expectedSeconds: Math.max(1, expectedSeconds),
+    startedAt: Date.now(),
+  };
+}
+
+function estimateJobProgress(job: ActiveJob): number | undefined {
+  if (job.status === 'queued') {
+    return job.progress;
+  }
+  if (!job.progressWindow) {
+    return job.progress;
+  }
+
+  const elapsedSeconds = (Date.now() - job.progressWindow.startedAt) / 1000;
+  const ratio = clamp01(elapsedSeconds / job.progressWindow.expectedSeconds);
+  const estimated = job.progressWindow.start + (job.progressWindow.end - job.progressWindow.start) * ratio;
+  const nextProgress = Math.max(job.progress ?? 0, estimated);
+  job.progress = clamp01(nextProgress);
+  return job.progress;
+}
+
+function updateJobFromPythonLog(job: ActiveJob, line: string): void {
+  const normalized = line.trim();
+  if (!normalized) return;
+
+  if (
+    normalized.includes('[Spawn] Spawning Python command')
+    || normalized.includes("[simple_generate] ACESTEP_PATH")
+  ) {
+    setJobProgressWindow(job, 'Starting Python generator...', 0.03, 0.05, 3);
+    return;
+  }
+
+  if (
+    normalized.includes('Successfully loaded environment')
+    || normalized.includes('Active configuration settings')
+  ) {
+    setJobProgressWindow(job, 'Loading generation environment...', 0.05, 0.07, 4);
+    return;
+  }
+
+  if (
+    normalized.includes('Attempting to load model with attention implementation')
+    || normalized.includes('Loading checkpoint shards:')
+  ) {
+    setJobProgressWindow(job, 'Loading DiT model...', 0.07, 0.14, 12);
+    return;
+  }
+
+  if (normalized.includes('Initializing LLMHandler with model')) {
+    setJobProgressWindow(job, 'Initializing language model...', 0.14, 0.18, 8);
+    return;
+  }
+
+  if (
+    normalized.includes('LM tokenizer loaded successfully')
+    || normalized.includes('Constrained processor initialized')
+    || normalized.includes('5Hz LM initialized successfully')
+  ) {
+    setJobProgressWindow(job, 'Preparing thinking pipeline...', 0.18, 0.24, 12);
+    return;
+  }
+
+  if (normalized.includes('Phase 1: Generating CoT metadata')) {
+    setJobProgressWindow(job, 'Thinking about metadata...', 0.24, 0.34, 20);
+    return;
+  }
+
+  if (normalized.includes('Phase 1: Using user-provided metadata')) {
+    setJobProgressWindow(job, 'Using provided metadata...', 0.30, 0.34, 2);
+    return;
+  }
+
+  if (normalized.includes('Phase 2: Generating audio codes')) {
+    setJobProgressWindow(job, 'Generating audio codes...', 0.34, 0.72, getExpectedCodegenSeconds(job.params));
+    return;
+  }
+
+  if (normalized.includes('Phase 2 completed in')) {
+    setJobProgressWindow(job, 'Audio codes ready...', 0.72, 0.74, 1);
+    return;
+  }
+
+  if (normalized.includes('[generate_music] Starting generation')) {
+    setJobProgressWindow(job, 'Starting audio generation...', 0.74, 0.76, 2);
+    return;
+  }
+
+  if (
+    normalized.includes('[generate_music] Preparing inputs')
+    || normalized.includes('Decoding audio codes for item')
+    || normalized.includes('Decoding audio codes for LM hints')
+  ) {
+    setJobProgressWindow(job, 'Preparing model inputs...', 0.76, 0.80, 5);
+    return;
+  }
+
+  if (normalized.includes('Inferring prompt embeddings')) {
+    setJobProgressWindow(job, 'Encoding prompt...', 0.80, 0.82, 2);
+    return;
+  }
+
+  if (normalized.includes('Inferring lyric embeddings')) {
+    setJobProgressWindow(job, 'Encoding lyrics...', 0.82, 0.84, 2);
+    return;
+  }
+
+  if (
+    normalized.includes('Generating audio... (DiT backend')
+    || normalized.includes('DiT diffusion via')
+  ) {
+    setJobProgressWindow(job, 'Running diffusion...', 0.84, 0.95, getExpectedDiffusionSeconds(job.params));
+    return;
+  }
+
+  if (normalized.includes('Model generation completed. Decoding latents')) {
+    setJobProgressWindow(job, 'Diffusion complete...', 0.95, 0.965, 1);
+    return;
+  }
+
+  if (
+    normalized.includes('Decoding latents with VAE')
+    || normalized.includes('Using tiled VAE decode')
+  ) {
+    setJobProgressWindow(job, 'Decoding audio...', 0.965, 0.985, getExpectedVaeSeconds(job.params));
+    return;
+  }
+
+  if (
+    normalized.includes('Preparing audio tensors')
+    || normalized.includes('Done! Generated')
+    || normalized.includes('[Normalization]')
+  ) {
+    setJobProgressWindow(job, 'Preparing final audio...', 0.985, 0.995, 4);
+    return;
+  }
+
+  if (
+    normalized.includes('Generating synced lyrics for sample')
+    || normalized.includes('get_lyric_timestamp')
+  ) {
+    setJobProgressWindow(job, 'Generating synced lyrics...', 0.995, 0.998, 8);
+    return;
+  }
+
+  if (normalized.includes('Calculating scores for sample')) {
+    setJobProgressWindow(job, 'Calculating scores...', 0.998, 0.999, 12);
+    return;
+  }
+
+  if (
+    normalized.includes('[AudioSaver] Saved audio')
+    || normalized.includes('Generated VTT file')
+    || normalized.includes('Copied matching LRC/VTT file')
+  ) {
+    setJobProgressWindow(job, 'Saving output files...', 0.995, 0.998, 2);
+  }
+}
 
 // Periodic cleanup of old jobs (every 10 minutes, remove jobs older than 1 hour)
 setInterval(() => cleanupOldJobs(3600000), 600000);
@@ -549,6 +748,8 @@ export async function generateMusicViaAPI(params: GenerationParams): Promise<{ j
     startTime: Date.now(),
     status: 'queued',
     queuePosition: jobQueue.length + 1,
+    progress: 0.02,
+    stage: 'Queued',
   };
 
   activeJobs.set(jobId, job);
@@ -572,7 +773,7 @@ async function processGeneration(
   job: ActiveJob,
 ): Promise<void> {
   job.status = 'running';
-  job.stage = 'Starting generation...';
+  setJobProgressWindow(job, 'Starting generation...', 0.02, 0.03, 2);
 
   // Guard: cover/audio2audio requires a source or audio codes
   if ((params.taskType === 'cover' || params.taskType === 'audio2audio') && !params.sourceAudioUrl && !params.audioCodes) {
@@ -745,6 +946,8 @@ async function processGenerationViaGradio(
     ? actualDuration
     : (metas.duration || params.duration || 0);
 
+  job.progress = 1;
+  job.progressWindow = undefined;
   job.status = 'succeeded';
   job.result = {
     audioUrls,
@@ -813,6 +1016,7 @@ async function processGenerationViaPython(
   params: GenerationParams,
   job: ActiveJob,
 ): Promise<void> {
+  setJobProgressWindow(job, 'Waiting for Python generator...', 0.02, 0.03, 2);
   const caption = params.style || 'pop music';
   const prompt = params.customMode ? caption : (params.songDescription || caption);
   const lyrics = params.instrumental ? '' : (params.lyrics || '');
@@ -904,7 +1108,9 @@ async function processGenerationViaPython(
     if (params.dcwHighScaler !== undefined) args.push('--dcw-high-scaler', String(params.dcwHighScaler));
     if (params.dcwWavelet) args.push('--dcw-wavelet', params.dcwWavelet);
     if (params.vaeModel) args.push('--vae-checkpoint', params.vaeModel);
-    const result = await runPythonGeneration(args);
+    const result = await runPythonGeneration(args, (line) => {
+      updateJobFromPythonLog(job, line);
+    });
 
     if (!result.success) {
       throw new Error(result.error || 'Generation failed');
@@ -957,6 +1163,8 @@ async function processGenerationViaPython(
 
     const finalDuration = actualDuration > 0 ? actualDuration : (params.duration && params.duration > 0 ? params.duration : 0);
 
+    job.progress = 1;
+    job.progressWindow = undefined;
     job.status = 'succeeded';
     job.result = {
       audioUrls,
@@ -990,7 +1198,11 @@ interface PythonResult {
   error?: string;
 }
 
-function runPythonGeneration(scriptArgs: string[], timeoutMs = 600000): Promise<PythonResult> {
+function runPythonGeneration(
+  scriptArgs: string[],
+  onLogLine?: (line: string) => void,
+  timeoutMs = 600000,
+): Promise<PythonResult> {
   return new Promise((resolve) => {
     const pythonPath = resolvePythonPath(ACESTEP_DIR);
     const args = [PYTHON_SCRIPT, ...scriptArgs];
@@ -1017,23 +1229,32 @@ function runPythonGeneration(scriptArgs: string[], timeoutMs = 600000): Promise<
 
     let stdout = '';
     let stderr = '';
+    let stderrBuffer = '';
 
     proc.stdout.on('data', (data) => {
       stdout += data.toString();
     });
 
     proc.stderr.on('data', (data) => {
-      stderr += data.toString();
-      const lines = data.toString().split('\n');
+      const chunk = data.toString();
+      stderr += chunk;
+      stderrBuffer += chunk;
+      const lines = stderrBuffer.split('\n');
+      stderrBuffer = lines.pop() ?? '';
       for (const line of lines) {
         if (line.trim()) {
           console.log(`[ACE-Step] ${line}`);
+          onLogLine?.(line);
         }
       }
     });
 
     proc.on('close', (code) => {
       clearTimeout(timer);
+      if (stderrBuffer.trim()) {
+        console.log(`[ACE-Step] ${stderrBuffer}`);
+        onLogLine?.(stderrBuffer);
+      }
       if (code !== 0) {
         resolve({ success: false, error: stderr || `Process exited with code ${code}` });
         return;
@@ -1091,6 +1312,7 @@ export async function getJobStatus(jobId: string): Promise<JobStatus> {
   }
 
   const elapsed = Math.floor((Date.now() - job.startTime) / 1000);
+  const estimatedProgress = estimateJobProgress(job);
 
   if (job.status === 'queued') {
     return {
@@ -1103,7 +1325,7 @@ export async function getJobStatus(jobId: string): Promise<JobStatus> {
   return {
     status: job.status,
     etaSeconds: Math.max(0, 180 - elapsed),
-    progress: job.progress,
+    progress: estimatedProgress,
     stage: job.stage,
   };
 }

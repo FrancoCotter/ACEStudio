@@ -442,6 +442,7 @@ def generate(
                 
                 if get_lrc:
                     try:
+                        print(f"[simple_generate] Generating synced lyrics for sample {idx0 + 1}...", file=sys.stderr)
                         # Extract intermediate tensors from extra_outputs
                         extra_outputs = result.extra_outputs or {}
                         pred_latents = extra_outputs.get("pred_latents")
@@ -482,6 +483,7 @@ def generate(
                         print(f"[simple_generate] Error generating LRC for sample {idx0}: {lrc_err}", file=sys.stderr)
 
                 if get_scores:
+                    print(f"[simple_generate] Calculating scores for sample {idx0 + 1}...", file=sys.stderr)
                     score_text = calculate_python_fallback_score(
                         handler=handler,
                         llm_handler=llm_handler,

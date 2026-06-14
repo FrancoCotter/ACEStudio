@@ -87,6 +87,10 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
         return `${stage} · ${formatElapsedTime(song.createdAt)}`;
     };
 
+    const measuredGenerationProgress = song && typeof song.progress === 'number'
+        ? Math.min(1, Math.max(0, song.progress))
+        : null;
+
     const startTitleEdit = () => {
         if (!song || !isOwner) return;
         setTitleDraft(song.title || '');
@@ -193,12 +197,13 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                     <span className="h-10 w-2 rounded-full bg-[#a8c9a4] animate-pulse" style={{ animationDelay: '360ms' }} />
                                 </div>
                             </div>
-                            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                                <span className="text-xs font-semibold text-white/75">
-                                    {getGenerationStatusText()}
-                                </span>
+                            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-end">
                                 <span className="rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-black backdrop-blur-sm">
-                                    {song.queuePosition ? `#${song.queuePosition}` : formatElapsedTime(song.createdAt)}
+                                    {song.queuePosition
+                                        ? `#${song.queuePosition}`
+                                        : measuredGenerationProgress === null
+                                            ? formatElapsedTime(song.createdAt)
+                                            : `${Math.round(measuredGenerationProgress * 100)}%`}
                                 </span>
                             </div>
                         </div>

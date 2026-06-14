@@ -198,13 +198,13 @@ function AppContent() {
     audio_url: string;
   }
 
-  const showToast = (message: string, type: ToastType = 'success') => {
+  const showToast = useCallback((message: string, type: ToastType = 'success') => {
     setToast({ message, type, isVisible: true });
-  };
+  }, []);
 
-  const closeToast = () => {
+  const closeToast = useCallback(() => {
     setToast(prev => ({ ...prev, isVisible: false }));
-  };
+  }, []);
 
   // Show username modal if not authenticated and not loading
   useEffect(() => {
@@ -937,11 +937,11 @@ function AppContent() {
         const normalizedProgress = Number.isFinite(Number(status.progress))
           ? (Number(status.progress) > 1 ? Number(status.progress) / 100 : Number(status.progress))
           : undefined;
+        const newQueuePos = status.status === 'queued' ? status.queuePosition : undefined;
 
         setSongs(prev => {
           const song = prev.find(s => s.id === tempId);
           if (!song) return prev;
-          const newQueuePos = status.status === 'queued' ? status.queuePosition : undefined;
           const newProgress = normalizedProgress ?? song.progress;
           const newStage = status.stage ?? song.stage;
           // Skip update if nothing changed to avoid unnecessary re-renders
@@ -952,6 +952,16 @@ function AppContent() {
             if (s.id !== tempId) return s;
             return { ...s, queuePosition: newQueuePos, progress: newProgress, stage: newStage };
           });
+        });
+
+        setSelectedSong(current => {
+          if (current?.id !== tempId) return current;
+          const newProgress = normalizedProgress ?? current.progress;
+          const newStage = status.stage ?? current.stage;
+          if (newProgress === current.progress && newStage === current.stage && newQueuePos === current.queuePosition) {
+            return current;
+          }
+          return { ...current, queuePosition: newQueuePos, progress: newProgress, stage: newStage };
         });
 
         if (status.status === 'succeeded' && status.result) {
@@ -993,6 +1003,7 @@ function AppContent() {
     duration: '--:--',
     createdAt: createdAt ?? new Date(),
     isGenerating: true,
+    progress: 0.02,
     stage: 'Queued',
     tags: params.customMode ? ['custom'] : ['simple'],
     isPublic: true,
@@ -1025,6 +1036,7 @@ function AppContent() {
       duration: '--:--',
       createdAt: new Date(),
       isGenerating: true,
+      progress: 0.02,
       stage: 'Submitting job...',
       tags: params.customMode ? ['custom'] : ['simple'],
       isPublic: true,
