@@ -678,7 +678,7 @@ def main():
     parser.add_argument("--cfg-interval-start", type=float, default=0.0, help="CFG interval start")
     parser.add_argument("--cfg-interval-end", type=float, default=1.0, help="CFG interval end")
     parser.add_argument("--no-dcw", action="store_true", help="Disable Dual Conditioning Wavelet")
-    parser.add_argument("--dcw-mode", type=str, default="double", choices=["double", "single", "none"], help="DCW conditioning mode")
+    parser.add_argument("--dcw-mode", type=str, default="double", choices=["low", "double", "high", "pix", "none"], help="DCW conditioning mode")
     parser.add_argument("--dcw-scaler", type=float, default=None, help="DCW scaler")
     parser.add_argument("--dcw-high-scaler", type=float, default=None, help="DCW high scaler")
     parser.add_argument("--dcw-wavelet", type=str, default="haar", help="DCW wavelet base")

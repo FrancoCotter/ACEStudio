@@ -326,6 +326,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
       { id: 'acestep-v15-turbo-shift3', name: 'acestep-v15-turbo-shift3' },
       { id: 'acestep-v15-turbo-continuous', name: 'acestep-v15-turbo-continuous' },
       { id: 'acestep-v15-xl-turbo', name: 'acestep-v15-xl-turbo' },
+      { id: 'acestep-v15-xl-base', name: 'acestep-v15-xl-base' },
     ];
   }, [fetchedModels]);
 
@@ -349,6 +350,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
       'acestep-v15-turbo-continuous': '1.5TC',
       'acestep-v15-turbo': '1.5T',
       'acestep-v15-xl-turbo': '1.5XL-T',
+      'acestep-v15-xl-base': '1.5XL-B'
     };
     return mapping[modelId] || modelId;
   };
