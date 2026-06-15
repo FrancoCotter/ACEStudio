@@ -41,7 +41,7 @@ export const DesktopOnlyGate: React.FC<DesktopOnlyGateProps> = ({ children }) =>
         </div>
         <h1 className="text-3xl font-bold tracking-normal">Desktop browser required</h1>
         <p className="mt-4 text-base leading-7 text-zinc-400">
-          ACEStudio is built for desktop workflows. Timeline editing,
+          APEXFlow is built for desktop workflows. Timeline editing,
   hover interactions, video tools, and advanced controls are best
   experienced on a larger screen.
         </p>

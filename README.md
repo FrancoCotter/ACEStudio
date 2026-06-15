@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/%E2%99%AB-ACEStudio-b6d6c6?style=for-the-badge&labelColor=1a1a1a" alt="ACEStudio" height="54">
+  <img src="https://img.shields.io/badge/%E2%99%AB-APEXFlow-b6d6c6?style=for-the-badge&labelColor=1a1a1a" alt="APEXFlow" height="54">
 </p>
 
-<h1 align="center">ACEStudio</h1>
+<h1 align="center">APEXFlow</h1>
 
 <p align="center">
   <strong>A local-first AI music studio for ACE-Step 1.5</strong><br>
@@ -44,7 +44,7 @@
 
 ## 🎧 About
 
-ACEStudio is a local-first music generation studio customized around
+APEXFlow is a local-first music generation studio customized around
 [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5).
 
 This repository started from the original
@@ -112,7 +112,7 @@ tools, and overall product direction.
 
 ### 🎨 Visual Direction
 
-- Renamed the UI direction to ACEStudio.
+- Renamed the UI direction to APEXFlow.
 - Forced the app into a dark, local-studio default.
 - Reworked many active colors away from bright pink / purple toward muted green
   and Morandi-inspired tones.
@@ -139,7 +139,7 @@ tools, and overall product direction.
 
 ## 🖥️ Current Status
 
-ACEStudio is currently a local personal fork rather than a polished upstream
+APEXFlow is currently a local personal fork rather than a polished upstream
 release. It works best as a desktop app running on the same machine as your
 ACE-Step environment.
 
@@ -168,7 +168,7 @@ Recommended use:
 
 ## ⚙️ Setup
 
-ACEStudio keeps the original script-based setup flow. The scripts install
+APEXFlow keeps the original script-based setup flow. The scripts install
 frontend dependencies, install backend dependencies, create `server/.env` when
 needed, and prepare the local data folder.
 
@@ -259,7 +259,7 @@ The all-in-one script starts:
 | Backend | http://localhost:3001 |
 | Frontend | http://localhost:3000 |
 
-### Option B: Start ACE-Step Yourself, Then Start ACEStudio
+### Option B: Start ACE-Step Yourself, Then Start APEXFlow
 
 Use this when you prefer to launch ACE-Step manually, or when you want more
 control over backend, model, and VRAM settings.
@@ -280,7 +280,7 @@ cd C:\ACE-Step-1.5
 python_embeded\python -m acestep --port 8001 --enable-api --backend pt --server-name 127.0.0.1
 ```
 
-Then start ACEStudio.
+Then start APEXFlow.
 
 Windows:
 
@@ -331,7 +331,7 @@ exist after cloning.
 ## 📈 Notes on Lyrics and Scores
 
 Synced lyrics depend on whether ACE-Step returns or saves a real LRC / VTT file.
-If no synced file exists, ACEStudio falls back to static lyrics display.
+If no synced file exists, APEXFlow falls back to static lyrics display.
 
 The score modal shows diagnostic values from ACE-Step when available. These
 scores are useful for comparing takes, not for declaring whether a song is
@@ -345,7 +345,7 @@ scores are useful for comparing takes, not for declaring whether a song is
 | --- | --- |
 | [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5) | Local AI music generation engine |
 | [Ambsd](https://x.com/AmbsdOP) / [Original ACE-Step UI](https://github.com/fspecii/ace-step-ui) | Original UI project this fork/customization started from |
-| [Mariano](https://x.com/Mariano_arti) / [ACEStudio repo](https://github.com/FrancoCotter/ace-step-ui) | Local studio customization and workflow direction |
+| [Mariano](https://x.com/Mariano_arti) / [APEXFlow repo](https://github.com/FrancoCotter/ace-step-ui) | Local studio customization and workflow direction |
 | [AudioMass](https://github.com/pkalogiros/AudioMass) | Browser audio editor |
 | [Demucs](https://github.com/facebookresearch/demucs) | Stem separation |
 | [Pexels](https://www.pexels.com) | Optional stock image/video search |
@@ -358,5 +358,5 @@ This project follows the license of the original repository. See
 [LICENSE](LICENSE) for details.
 
 <p align="center">
-  <strong>ACEStudio is a local music workspace, shaped for hands-on ACE-Step experiments.</strong>
+  <strong>APEXFlow is a local music workspace, shaped for hands-on ACE-Step experiments.</strong>
 </p>

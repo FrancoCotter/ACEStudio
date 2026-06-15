@@ -189,7 +189,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, t
                             <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
-                                        <p className="text-lg font-semibold text-zinc-900 dark:text-white">ACEStudio</p>
+                                        <p className="text-lg font-semibold text-zinc-900 dark:text-white">APEXFlow</p>
                                         <p className="mt-1 text-zinc-500 dark:text-zinc-400">{t('localAIMusicGenerator')}</p>
                                     </div>
                                     <span className="rounded-full border border-[#8fb68f]/35 bg-[#8fb68f]/15 px-3 py-1 text-xs font-semibold text-[#31533a] dark:text-[#b8d8b5]">

@@ -56,6 +56,7 @@ const getModelDisplayName = (modelId?: string): string => {
         'acestep-v15-turbo-shift3': '1.5TS3',
         'acestep-v15-turbo-continuous': '1.5TC',
         'acestep-v15-turbo': '1.5T',
+        'acestep-v15-xl-base': '1.5XL-B',
         'acestep-v15-xl-turbo': '1.5XL-T',
     };
     return mapping[modelId] || modelId.replace(/^acestep-/, '').replace(/^v/, '').toUpperCase();

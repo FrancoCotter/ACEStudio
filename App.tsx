@@ -40,7 +40,7 @@ const StartupLoading: React.FC<{ progress: number }> = ({ progress }) => (
         backgroundClip: 'text',
       }}
     >
-      ACEStudio
+      APEXFlow
     </div>
   </div>
 );

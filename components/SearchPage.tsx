@@ -29,8 +29,11 @@ const getModelDisplayName = (modelId?: string): string => {
   const mapping: Record<string, string> = {
     'acestep-v1-5': '1.5',
     'acestep-v1.5': '1.5',
+    'acestep-v15-base': '1.5B',
+    'acestep-v15-sft': '1.5S',
     'acestep-v1.5-turbo': '1.5T',
     'acestep-v15-turbo': '1.5T',
+    'acestep-v15-xl-base': '1.5XL-B',
     'acestep-v1.5-xl-turbo': '1.5XL-T',
     'acestep-v15-xl-turbo': '1.5XL-T',
     'acestep-v1.5-turbo-s3': '1.5TS3',

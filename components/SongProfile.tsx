@@ -135,8 +135,8 @@ function parseGenerationParams(value: unknown): any {
 const updateMetaTags = (song: Song) => {
     const baseUrl = window.location.origin;
     const songUrl = `${baseUrl}/song/${song.id}`;
-    const title = `${song.title} by ${song.creator || 'Unknown Artist'} | ACEStudio`;
-    const description = `Listen to "${song.title}" - ${song.style}. ${song.viewCount || 0} plays, ${song.likeCount || 0} likes. Create your own AI music with ACEStudio.`;
+    const title = `${song.title} by ${song.creator || 'Unknown Artist'} | APEXFlow`;
+    const description = `Listen to "${song.title}" - ${song.style}. ${song.viewCount || 0} plays, ${song.likeCount || 0} likes. Create your own AI music with APEXFlow.`;
 
     document.title = title;
 
@@ -176,8 +176,8 @@ const updateMetaTags = (song: Song) => {
 };
 
 const resetMetaTags = () => {
-    document.title = 'ACEStudio - Local AI Music Generator';
-    const defaultDescription = 'Create original music with AI locally. Generate songs in any style with custom lyrics and professional quality using ACEStudio.';
+    document.title = 'APEXFlow - Local UI for ACE-Step 1.5';
+    const defaultDescription = 'Create original music locally with APEXFlow, an unofficial UI for ACE-Step 1.5.';
     const defaultImage = '/og-image.png';
 
     const updateMeta = (selector: string, content: string) => {
@@ -186,11 +186,11 @@ const resetMetaTags = () => {
     };
 
     updateMeta('meta[name="description"]', defaultDescription);
-    updateMeta('meta[property="og:title"]', 'ACEStudio - Local AI Music Generator');
+    updateMeta('meta[property="og:title"]', 'APEXFlow - Local UI for ACE-Step 1.5');
     updateMeta('meta[property="og:description"]', defaultDescription);
     updateMeta('meta[property="og:image"]', defaultImage);
     updateMeta('meta[property="og:type"]', 'website');
-    updateMeta('meta[name="twitter:title"]', 'ACEStudio - Local AI Music Generator');
+    updateMeta('meta[name="twitter:title"]', 'APEXFlow - Local UI for ACE-Step 1.5');
     updateMeta('meta[name="twitter:description"]', defaultDescription);
     updateMeta('meta[name="twitter:image"]', defaultImage);
 };

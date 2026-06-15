@@ -59,7 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <BrandMark className="w-6 h-6" />
           </div>
           {isOpen && (
-            <span className="text-lg font-bold text-zinc-900 dark:text-white whitespace-nowrap">ACEStudio</span>
+            <span className="text-lg font-bold text-zinc-900 dark:text-white whitespace-nowrap">APEXFlow</span>
           )}
         </div>
       </div>
