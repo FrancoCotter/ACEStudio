@@ -55,6 +55,18 @@ const TRACK_NAMES = [
   'keyboard', 'guitar', 'bass', 'drums', 'backing_vocals', 'vocals',
 ];
 
+const shouldDefaultDcwOff = (modelId: string): boolean => {
+  const normalized = modelId.toLowerCase();
+  return (
+    normalized.includes('base') ||
+    normalized.includes('sft') ||
+    normalized.endsWith('-b') ||
+    normalized.endsWith('-s') ||
+    normalized.includes('xl-b') ||
+    normalized.includes('xl-s')
+  );
+};
+
 const VOCAL_LANGUAGE_KEYS = [
   { value: 'unknown', key: 'autoInstrumental' as const },
   { value: 'ar', key: 'vocalArabic' as const },
@@ -278,7 +290,10 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
   const [gpuMemoryGb, setGpuMemoryGb] = useState<number | null>(null);
 
    // DCW Parameters
-  const [dcwEnabled, setDcwEnabled] = useState(true);
+  const [dcwEnabled, setDcwEnabled] = useState(() => {
+    const storedModel = localStorage.getItem('ace-model') || 'acestep-v15-turbo-shift3';
+    return !shouldDefaultDcwOff(storedModel);
+  });
   const [dcwMode, setDcwMode] = useState('double');
   const [dcwScaler, setDcwScaler] = useState(0.05);
   const [dcwHighScaler, setDcwHighScaler] = useState(0.02);
@@ -300,6 +315,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
   const [showModelMenu, setShowModelMenu] = useState(false);
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const previousModelRef = useRef<string>(selectedModel);
+  const dcwDefaultModelRef = useRef<string>(selectedModel);
   
   // Available models fetched from backend
   const [fetchedModels, setFetchedModels] = useState<{ name: string; is_active: boolean; is_preloaded: boolean }[]>([]);
@@ -327,6 +343,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
       { id: 'acestep-v15-turbo-continuous', name: 'acestep-v15-turbo-continuous' },
       { id: 'acestep-v15-xl-turbo', name: 'acestep-v15-xl-turbo' },
       { id: 'acestep-v15-xl-base', name: 'acestep-v15-xl-base' },
+      { id: 'acestep-v15-xl-sft', name: 'acestep-v15-xl-sft' },
     ];
   }, [fetchedModels]);
 
@@ -350,7 +367,8 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
       'acestep-v15-turbo-continuous': '1.5TC',
       'acestep-v15-turbo': '1.5T',
       'acestep-v15-xl-turbo': '1.5XL-T',
-      'acestep-v15-xl-base': '1.5XL-B'
+      'acestep-v15-xl-base': '1.5XL-B',
+      'acestep-v15-xl-sft': '1.5XL-S',
     };
     return mapping[modelId] || modelId;
   };
@@ -484,6 +502,15 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
     }
     previousModelRef.current = selectedModel;
   }, [selectedModel, loraLoaded]);
+
+  // Base/SFT models are slower and tend to be less stable with DCW enabled.
+  // Auto-adjust DCW on model selection, but keep the toggle available for manual experiments.
+  useEffect(() => {
+    if (dcwDefaultModelRef.current !== selectedModel) {
+      setDcwEnabled(!shouldDefaultDcwOff(selectedModel));
+    }
+    dcwDefaultModelRef.current = selectedModel;
+  }, [selectedModel]);
 
   // Auto-disable thinking and ADG when LoRA is loaded
   useEffect(() => {
@@ -1364,12 +1391,12 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
           <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
             <div className="flex h-4 items-end gap-0.5" aria-hidden="true">
-              <span className="w-0.5 h-2 rounded-full bg-[#8fbc8f]" />
+              {/* <span className="w-0.5 h-2 rounded-full bg-[#8fbc8f]" />
               <span className="w-0.5 h-3.5 rounded-full bg-[#8fbc8f]" />
               <span className="w-0.5 h-2.5 rounded-full bg-[#8fbc8f]" />
-              <span className="w-0.5 h-4 rounded-full bg-[#8fbc8f]" />
+              <span className="w-0.5 h-4 rounded-full bg-[#8fbc8f]" /> */}
             </div>
-            <span className="hidden sm:inline text-xs font-semibold tracking-wide">Create Studio</span>
+            <span className="hidden sm:inline text-xs font-semibold tracking-wide">Create Center</span>
           </div>
 
           <div className="justify-self-center">
@@ -1413,11 +1440,15 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                         onClick={() => {
                           setSelectedModel(model.id);
                           localStorage.setItem('ace-model', model.id);
-                          // Auto-adjust parameters for non-turbo models
-                          if (!isTurboModel(model.id)) {
-                            setInferenceSteps(20);
+                          // Keep the visible step control aligned with the selected model family.
+                          if (isTurboModel(model.id)) {
+                            setInferenceSteps(8);
+                            setUseAdg(false);
+                          } else {
+                            setInferenceSteps(prev => Math.max(prev, 50));
                             setUseAdg(true);
                           }
+                          setDcwEnabled(!shouldDefaultDcwOff(model.id));
                           setShowModelMenu(false);
                         }}
                         className={`w-full px-4 py-3 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-100 dark:border-zinc-800 last:border-b-0 ${
@@ -2342,6 +2373,11 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                     <div className={`w-4 h-4 rounded-full bg-white transform transition-transform duration-200 shadow-sm ${dcwEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
                   </button>
               </div>
+              {!dcwEnabled && shouldDefaultDcwOff(selectedModel) && (
+                <p className="text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-500">
+                  DCW is off by default for base/SFT models to avoid noisy generations.
+                </p>
+              )}
               
               {dcwEnabled && (
                 <div className="space-y-3">

@@ -31,6 +31,7 @@ interface SongListProps {
     onCoverSong?: (song: Song) => void;
     onUseUploadAsReference?: (track: { audio_url: string; filename: string }) => void;
     onCoverUpload?: (track: { audio_url: string; filename: string }) => void;
+    onAudioWarmup?: (song: Song) => void;
     isLoading?: boolean;
     isLoadingMore?: boolean;
     hasMore?: boolean;
@@ -58,6 +59,7 @@ const getModelDisplayName = (modelId?: string): string => {
         'acestep-v15-turbo': '1.5T',
         'acestep-v15-xl-base': '1.5XL-B',
         'acestep-v15-xl-turbo': '1.5XL-T',
+        'acestep-v15-xl-sft': '1.5XL-S',
     };
     return mapping[modelId] || modelId.replace(/^acestep-/, '').replace(/^v/, '').toUpperCase();
 };
@@ -84,8 +86,7 @@ const getExplicitDynamicLyricsFlag = (song: Song): boolean | undefined => {
 };
 
 const shouldProbeDynamicLyrics = (song: Song): boolean => {
-    const params = (song.generationParams || {}) as Record<string, unknown>;
-    return Boolean(song.audioUrl && (params.getLrc || params.get_lrc));
+    return getExplicitDynamicLyricsFlag(song) === true;
 };
 
 const getSyncedLyricsUrl = (song: Song): string | undefined => {
@@ -249,6 +250,7 @@ export const SongList: React.FC<SongListProps> = ({
     onCoverSong,
     onUseUploadAsReference,
     onCoverUpload,
+    onAudioWarmup,
     isLoading = false,
     isLoadingMore = false,
     hasMore = false,
@@ -577,6 +579,7 @@ export const SongList: React.FC<SongListProps> = ({
                                     onSongUpdate={onSongUpdate}
                                     onUseAsReference={() => onUseAsReference?.(item.song)}
                                     onCoverSong={() => onCoverSong?.(item.song)}
+                                    onAudioWarmup={onAudioWarmup}
                                 />
                             ) : (
                                 <UploadItem
@@ -649,6 +652,7 @@ interface SongItemProps {
     onSongUpdate?: (updatedSong: Song) => void;
     onUseAsReference?: () => void;
     onCoverSong?: () => void;
+    onAudioWarmup?: (song: Song) => void;
 }
 
 const SongItem: React.FC<SongItemProps> = ({
@@ -673,7 +677,8 @@ const SongItem: React.FC<SongItemProps> = ({
     onDelete,
     onSongUpdate,
     onUseAsReference,
-    onCoverSong
+    onCoverSong,
+    onAudioWarmup
 }) => {
     const { token } = useAuth();
     const hasMeasuredProgress = typeof song.progress === 'number' && song.progress > 0;
@@ -683,6 +688,8 @@ const SongItem: React.FC<SongItemProps> = ({
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [editedTitle, setEditedTitle] = useState(song.title);
     const titleInputRef = useRef<HTMLInputElement>(null);
+    const itemRef = useRef<HTMLDivElement>(null);
+    const hasRequestedWarmupRef = useRef(false);
     const explicitDynamicLyrics = getExplicitDynamicLyricsFlag(song);
     const [hasVerifiedDynamicLyrics, setHasVerifiedDynamicLyrics] = useState(explicitDynamicLyrics === true);
     const scorePayload = getSongScorePayload(song);
@@ -736,6 +743,26 @@ const SongItem: React.FC<SongItemProps> = ({
         }
     }, [isEditingTitle]);
 
+    useEffect(() => {
+        if (!onAudioWarmup || !song.audioUrl || song.isGenerating || hasRequestedWarmupRef.current) return;
+        const item = itemRef.current;
+        if (!item) return;
+
+        const observer = new IntersectionObserver((entries) => {
+            if (!entries.some(entry => entry.isIntersecting)) return;
+            hasRequestedWarmupRef.current = true;
+            onAudioWarmup(song);
+            observer.disconnect();
+        }, {
+            root: null,
+            rootMargin: '280px 0px',
+            threshold: 0.01,
+        });
+
+        observer.observe(item);
+        return () => observer.disconnect();
+    }, [onAudioWarmup, song]);
+
     const handleSaveTitle = async () => {
         if (!token || !isOwner || !editedTitle.trim() || editedTitle === song.title) {
             setIsEditingTitle(false);
@@ -778,6 +805,7 @@ const SongItem: React.FC<SongItemProps> = ({
     return (
         <>
         <div
+            ref={itemRef}
             onClick={onSelect}
             draggable={Boolean(song.audioUrl) && !song.isGenerating}
             onDragStart={(e) => {

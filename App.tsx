@@ -28,7 +28,7 @@ const VideoGeneratorModal = React.lazy(() =>
 
 const SONGS_PAGE_SIZE = 80;
 const MAX_RESUMABLE_JOB_AGE_MS = 3 * 60 * 60 * 1000;
-const GENERATION_TIMEOUT_MS = Number(process.env.GENERATION_TIMEOUT_MS || 600000);
+const GENERATION_TIMEOUT_MS = Number(process.env.GENERATION_TIMEOUT_MS || 1800000);
 
 const StartupLoading: React.FC<{ progress: number }> = ({ progress }) => (
   <div className="flex h-screen w-screen items-center justify-center bg-suno-DEFAULT text-white">
@@ -165,6 +165,12 @@ function AppContent() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const selectedSongRef = useRef<Song | null>(null);
   const currentSongIdRef = useRef<string | null>(null);
+  const preloadedSongIdRef = useRef<string | null>(null);
+  const audioWarmupCacheRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const audioWarmupQueueRef = useRef<Song[]>([]);
+  const audioWarmupQueuedIdsRef = useRef<Set<string>>(new Set());
+  const audioWarmupActiveRef = useRef(0);
+  const audioWarmupScheduleRef = useRef<number | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
   const playNextRef = useRef<() => void>(() => {});
   const rightSidebarCloseTimerRef = useRef<number | null>(null);
@@ -259,7 +265,6 @@ function AppContent() {
 
   const handleShowDetails = (song: Song) => {
     setSelectedSong(song);
-    hydrateSongDetails(song);
     setShowMobileDetails(true);
   };
 
@@ -340,33 +345,19 @@ function AppContent() {
   }), []);
 
   // Song Update Handler
-  const handleSongUpdate = (updatedSong: Song) => {
+  const handleSongUpdate = useCallback((updatedSong: Song) => {
     const mergeSong = (existing: Song | null | undefined) =>
       existing && existing.id === updatedSong.id ? { ...existing, ...updatedSong } : existing;
     setSongs(prev => prev.map(s => s.id === updatedSong.id ? { ...s, ...updatedSong } : s));
     setPlayQueue(prev => prev.map(s => s.id === updatedSong.id ? { ...s, ...updatedSong } : s));
     setCurrentSong(prev => mergeSong(prev) ?? null);
     setSelectedSong(prev => mergeSong(prev) ?? null);
-  };
-
-  const hydrateSongDetails = useCallback((song: Song) => {
-    if (!token || song.isGenerating || song.hasDetails) return;
-    songsApi.getSong(song.id, token)
-      .then(response => {
-        const detailedSong = mapApiSong(response.song, true);
-        setSongs(prev => prev.map(item => item.id === detailedSong.id ? { ...item, ...detailedSong } : item));
-        setPlayQueue(prev => prev.map(item => item.id === detailedSong.id ? { ...item, ...detailedSong } : item));
-        setSelectedSong(current => current?.id === detailedSong.id ? { ...current, ...detailedSong } : current);
-        setCurrentSong(current => current?.id === detailedSong.id ? { ...current, ...detailedSong } : current);
-      })
-      .catch(error => console.error('Failed to load song details:', error));
-  }, [token, mapApiSong]);
+  }, []);
 
   const handleSelectSong = useCallback((song: Song) => {
     setSelectedSong(song);
     openRightSidebar();
-    hydrateSongDetails(song);
-  }, [openRightSidebar, hydrateSongDetails]);
+  }, [openRightSidebar]);
 
   // Navigate to Profile Handler
   const handleNavigateToProfile = (username: string) => {
@@ -502,20 +493,12 @@ function AppContent() {
       setIsSongsLoading(true);
       try {
         let mySongsRes;
-        let loadedFromSummary = true;
-        try {
-          mySongsRes = await songsApi.getMySongs(token, {
-            limit: SONGS_PAGE_SIZE,
-            offset: 0,
-            summary: true,
-          });
-        } catch (summaryError) {
-          console.error('Failed to load summary songs, retrying full list:', summaryError);
-          loadedFromSummary = false;
-          mySongsRes = await songsApi.getMySongs(token);
-        }
+        mySongsRes = await songsApi.getMySongs(token, {
+          limit: SONGS_PAGE_SIZE,
+          offset: 0,
+        });
 
-        const loadedSongs = mySongsRes.songs.map(s => mapApiSong(s, !loadedFromSummary));
+        const loadedSongs = mySongsRes.songs.map(s => mapApiSong(s, true));
 
         // Preserve any generating songs (temp songs)
         setSongs(prev => {
@@ -545,9 +528,8 @@ function AppContent() {
       const response = await songsApi.getMySongs(token, {
         limit: SONGS_PAGE_SIZE,
         offset: songsNextOffset,
-        summary: true,
       });
-      const loadedSongs = response.songs.map(s => mapApiSong(s, false));
+      const loadedSongs = response.songs.map(s => mapApiSong(s, true));
       setSongs(prev => {
         const existingIds = new Set(prev.map(song => song.id));
         return [...prev, ...loadedSongs.filter(song => !existingIds.has(song.id))];
@@ -736,11 +718,92 @@ function AppContent() {
     playNextRef.current = playNext;
   }, [playNext]);
 
+  const processAudioWarmupQueue = useCallback(() => {
+    const maxWarmAudio = 12;
+    const maxConcurrentWarmAudio = 2;
+    const cache = audioWarmupCacheRef.current;
+    const queue = audioWarmupQueueRef.current;
+    const queuedIds = audioWarmupQueuedIdsRef.current;
+
+    const trimCache = () => {
+      while (cache.size > maxWarmAudio) {
+        const oldestId = cache.keys().next().value;
+        if (!oldestId) break;
+        const warmAudio = cache.get(oldestId);
+        warmAudio?.pause();
+        warmAudio?.removeAttribute('src');
+        warmAudio?.load();
+        cache.delete(oldestId);
+      }
+    };
+
+    while (audioWarmupActiveRef.current < maxConcurrentWarmAudio && queue.length > 0) {
+      const song = queue.shift();
+      if (!song?.audioUrl || song.isGenerating || cache.has(song.id)) {
+        if (song?.id) queuedIds.delete(song.id);
+        continue;
+      }
+
+      queuedIds.delete(song.id);
+      audioWarmupActiveRef.current += 1;
+
+      const warmAudio = new Audio();
+      warmAudio.crossOrigin = 'anonymous';
+      warmAudio.preload = 'metadata';
+      warmAudio.src = song.audioUrl;
+      cache.set(song.id, warmAudio);
+      trimCache();
+
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        audioWarmupActiveRef.current = Math.max(0, audioWarmupActiveRef.current - 1);
+        window.setTimeout(() => processAudioWarmupQueue(), 0);
+      };
+
+      warmAudio.addEventListener('loadedmetadata', finish, { once: true });
+      warmAudio.addEventListener('canplay', finish, { once: true });
+      warmAudio.addEventListener('error', finish, { once: true });
+      window.setTimeout(finish, 5000);
+      warmAudio.load();
+    }
+  }, []);
+
+  const scheduleAudioWarmup = useCallback(() => {
+    if (audioWarmupScheduleRef.current !== null) return;
+
+    const runWarmup = () => {
+      audioWarmupScheduleRef.current = null;
+      processAudioWarmupQueue();
+    };
+
+    const requestIdle = (window as typeof window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+    }).requestIdleCallback;
+
+    audioWarmupScheduleRef.current = requestIdle
+      ? requestIdle(runWarmup, { timeout: 1600 })
+      : window.setTimeout(runWarmup, 450);
+  }, [processAudioWarmupQueue]);
+
+  const warmupVisibleSongAudio = useCallback((song: Song) => {
+    if (!song.audioUrl || song.isGenerating) return;
+    if (preloadedSongIdRef.current === song.id) return;
+    if (audioWarmupCacheRef.current.has(song.id)) return;
+    if (audioWarmupQueuedIdsRef.current.has(song.id)) return;
+
+    audioWarmupQueuedIdsRef.current.add(song.id);
+    audioWarmupQueueRef.current.push(song);
+    scheduleAudioWarmup();
+  }, [scheduleAudioWarmup]);
+
   // Audio Setup
   useEffect(() => {
     audioRef.current = new Audio();
     audioRef.current.crossOrigin = "anonymous";
     const audio = audioRef.current;
+    audio.preload = 'auto';
     audio.volume = volume;
 
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
@@ -794,6 +857,14 @@ function AppContent() {
 
     return () => {
       audio.pause();
+      audioWarmupCacheRef.current.forEach(warmAudio => {
+        warmAudio.pause();
+        warmAudio.removeAttribute('src');
+        warmAudio.load();
+      });
+      audioWarmupCacheRef.current.clear();
+      audioWarmupQueueRef.current = [];
+      audioWarmupQueuedIdsRef.current.clear();
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('canplay', onCanPlay);
@@ -802,6 +873,22 @@ function AppContent() {
       audio.removeEventListener('error', onError);
     };
   }, []);
+
+  // Prime the audio element with the first playable song so the first user play
+  // does not pay the full network/decode cold-start cost.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || currentSong || isPlaying) return;
+
+    const firstPlayableSong = songs.find(song => song.audioUrl && !song.isGenerating);
+    if (!firstPlayableSong?.audioUrl) return;
+    if (preloadedSongIdRef.current === firstPlayableSong.id) return;
+
+    preloadedSongIdRef.current = firstPlayableSong.id;
+    currentSongIdRef.current = firstPlayableSong.id;
+    audio.src = firstPlayableSong.audioUrl;
+    audio.load();
+  }, [songs, currentSong, isPlaying]);
 
   // Handle Playback State
   useEffect(() => {
@@ -829,7 +916,9 @@ function AppContent() {
       if (isPlaying) playAudio();
     } else {
       if (isPlaying) playAudio();
-      else audio.pause();
+      else {
+        audio.pause();
+      }
     }
   }, [currentSong, isPlaying]);
 
@@ -898,9 +987,8 @@ function AppContent() {
       const response = await songsApi.getMySongs(token, {
         limit: Math.max(SONGS_PAGE_SIZE, songsNextOffset || SONGS_PAGE_SIZE),
         offset: 0,
-        summary: true,
       });
-      const loadedSongs: Song[] = response.songs.map(s => mapApiSong(s, false));
+      const loadedSongs: Song[] = response.songs.map(s => mapApiSong(s, true));
 
       // Preserve any generating songs that aren't in the loaded list
       setSongs(prev => {
@@ -1220,6 +1308,27 @@ function AppContent() {
     setSelectedSong(prev => prev?.id === songId ? { ...prev, viewCount, view_count: viewCount } : prev);
   }, []);
 
+  const beginImmediatePlayback = (song: Song) => {
+    const audio = audioRef.current;
+    if (!audio || !song.audioUrl) return;
+
+    if (currentSongIdRef.current !== song.id || audio.src !== new URL(song.audioUrl, window.location.href).href) {
+      currentSongIdRef.current = song.id;
+      audio.src = song.audioUrl;
+      audio.load();
+    }
+
+    audio.play().catch(err => {
+      if (err instanceof Error && err.name !== 'AbortError') {
+        console.error("Playback failed:", err);
+        if (err.name === 'NotSupportedError') {
+          showToast(t('songNotAvailable'), 'error');
+        }
+        setIsPlaying(false);
+      }
+    });
+  };
+
   const playSong = (song: Song, list?: Song[]) => {
     const nextQueue = list && list.length > 0
       ? list
@@ -1233,6 +1342,7 @@ function AppContent() {
     if (currentSong?.id !== song.id) {
       const currentViews = song.viewCount ?? (song as Song & { view_count?: number }).view_count ?? 0;
       const updatedSong = { ...song, viewCount: currentViews + 1, view_count: currentViews + 1 };
+      beginImmediatePlayback(updatedSong);
       setCurrentSong(updatedSong);
       setSelectedSong(updatedSong);
       setIsPlaying(true);
@@ -1245,7 +1355,6 @@ function AppContent() {
           }
         })
         .catch(err => console.error('Failed to track play:', err));
-      hydrateSongDetails(song);
     } else {
       togglePlay();
     }
@@ -1661,6 +1770,7 @@ function AppContent() {
                 onCoverSong={handleCoverSong}
                 onUseUploadAsReference={handleUseUploadAsReference}
                 onCoverUpload={handleCoverUpload}
+                onAudioWarmup={warmupVisibleSongAudio}
                 onSongUpdate={handleSongUpdate}
               />
             </div>
