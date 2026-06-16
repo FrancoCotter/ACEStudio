@@ -61,7 +61,7 @@ for people who want to run ACE-Step on their own machine.
 
 <!-- ![APEXFlow Demo](docs/demo.gif) -->
 <!-- If you recorded a high-quality .mov, uncomment the video player tag below instead: -->
-<video autoplay loop muted playsinline src="docs/output.mp4" width="100%"></video>
+<video autoplay loop muted playsinline src="https://raw.githubusercontent.com/FrancoCotter/apexflow/main/docs/output.mp4" width="100%"></video>
 
 ---
 
