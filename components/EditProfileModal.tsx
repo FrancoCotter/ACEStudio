@@ -3,6 +3,7 @@ import { X, Camera, Image as ImageIcon, Upload, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { usersApi, UserProfile } from '../services/api';
 import { useI18n } from '../context/I18nContext';
+import { getAvatarUrl } from '../utils/avatar';
 
 interface EditProfileModalProps {
     isOpen: boolean;
@@ -30,6 +31,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
     const [uploadingBanner, setUploadingBanner] = useState(false);
     const avatarInputRef = useRef<HTMLInputElement>(null);
     const bannerInputRef = useRef<HTMLInputElement>(null);
+    const [assetVersion, setAssetVersion] = useState(0);
 
     useEffect(() => {
         if (isOpen && user && token) {
@@ -47,6 +49,10 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
             setEditBio(res.user.bio || '');
             setEditAvatarUrl(res.user.avatar_url || '');
             setEditBannerUrl(res.user.banner_url || '');
+            setAvatarFile(null);
+            setBannerFile(null);
+            setAvatarPreview(null);
+            setBannerPreview(null);
             setUsernameError('');
         } catch (error) {
             console.error('Failed to load profile:', error);
@@ -81,6 +87,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
         setUsernameError('');
 
         try {
+            let nextUsername = profile.username;
+
             // Update username if changed
             if (editUsername && editUsername !== profile.username) {
                 const sanitized = editUsername.trim().replace(/[^a-zA-Z0-9_-]/g, '');
@@ -101,35 +109,76 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
                     setIsSaving(false);
                     return;
                 }
+                nextUsername = sanitized;
             }
+
+            let nextAvatarUrl = editAvatarUrl;
+            let nextBannerUrl = editBannerUrl;
 
             if (avatarFile) {
                 setUploadingAvatar(true);
                 const avatarRes = await usersApi.uploadAvatar(avatarFile, token);
-                setEditAvatarUrl(avatarRes.url);
+                nextAvatarUrl = avatarRes.url;
+                setEditAvatarUrl(nextAvatarUrl);
                 setUploadingAvatar(false);
             }
 
             if (bannerFile) {
                 setUploadingBanner(true);
                 const bannerRes = await usersApi.uploadBanner(bannerFile, token);
-                setEditBannerUrl(bannerRes.url);
+                nextBannerUrl = bannerRes.url;
+                setEditBannerUrl(nextBannerUrl);
                 setUploadingBanner(false);
             }
 
             const updates: Record<string, string> = { bio: editBio };
-            if (!avatarFile && editAvatarUrl !== profile.avatar_url) {
-                updates.avatarUrl = editAvatarUrl;
+            if (!avatarFile && nextAvatarUrl !== profile.avatar_url) {
+                updates.avatarUrl = nextAvatarUrl;
             }
-            if (!bannerFile && editBannerUrl !== profile.banner_url) {
-                updates.bannerUrl = editBannerUrl;
+            if (!bannerFile && nextBannerUrl !== profile.banner_url) {
+                updates.bannerUrl = nextBannerUrl;
             }
+
+            let updatedProfile: UserProfile = {
+                ...profile,
+                username: nextUsername,
+                bio: editBio,
+                avatar_url: nextAvatarUrl,
+                banner_url: nextBannerUrl,
+            };
 
             if (Object.keys(updates).length > 0) {
-                await usersApi.updateProfile(updates, token);
+                const updateRes = await usersApi.updateProfile(updates, token);
+                updatedProfile = {
+                    ...updatedProfile,
+                    ...updateRes.user,
+                    username: updateRes.user.username || nextUsername,
+                    bio: editBio,
+                    avatar_url: nextAvatarUrl,
+                    banner_url: nextBannerUrl,
+                };
             }
 
+            setProfile(updatedProfile);
+            setEditUsername(updatedProfile.username || '');
+            setEditBio(updatedProfile.bio || '');
+            setEditAvatarUrl(updatedProfile.avatar_url || '');
+            setEditBannerUrl(updatedProfile.banner_url || '');
+            setAvatarFile(null);
+            setBannerFile(null);
+            setAvatarPreview(null);
+            setBannerPreview(null);
+            const nextVersion = Date.now();
+            setAssetVersion(nextVersion);
             await refreshUser();
+            window.dispatchEvent(new CustomEvent('profile-updated', {
+                detail: {
+                    username: updatedProfile.username,
+                    avatarUrl: updatedProfile.avatar_url,
+                    bannerUrl: updatedProfile.banner_url,
+                    version: nextVersion,
+                },
+            }));
             handleClose();
             onSaved?.();
         } catch (error) {
@@ -150,6 +199,15 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
         setUsernameError('');
         onClose();
     };
+
+    const withVersion = (url: string | undefined, version: number) => {
+        if (!url || !version || url.startsWith('data:') || url.startsWith('blob:')) return url || '';
+        return `${url}${url.includes('?') ? '&' : '?'}v=${version}`;
+    };
+
+    const avatarDisplayUrl = avatarPreview
+        || withVersion(getAvatarUrl(editAvatarUrl, editUsername || profile?.username), assetVersion);
+    const bannerDisplayUrl = bannerPreview || withVersion(editBannerUrl, assetVersion);
 
     if (!isOpen) return null;
 
@@ -198,9 +256,9 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
                                 <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('avatarImage')}</label>
                                 <div className="flex gap-4 items-center">
                                     <div className="w-20 h-20 rounded-full bg-zinc-100 dark:bg-zinc-800 border-2 border-zinc-300 dark:border-zinc-700 border-dashed overflow-hidden flex-shrink-0 relative">
-                                        {(avatarPreview || editAvatarUrl) ? (
+                                        {avatarDisplayUrl ? (
                                             <img
-                                                src={avatarPreview || editAvatarUrl}
+                                                src={avatarDisplayUrl}
                                                 className="w-full h-full object-cover"
                                                 onError={(e) => (e.currentTarget.style.display = 'none')}
                                             />
@@ -243,9 +301,9 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
                                     onClick={() => bannerInputRef.current?.click()}
                                     className="relative w-full h-32 rounded-lg bg-zinc-100 dark:bg-zinc-800 border-2 border-zinc-300 dark:border-zinc-700 border-dashed overflow-hidden cursor-pointer hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors"
                                 >
-                                    {(bannerPreview || editBannerUrl) ? (
+                                    {bannerDisplayUrl ? (
                                         <img
-                                            src={bannerPreview || editBannerUrl}
+                                            src={bannerDisplayUrl}
                                             className="w-full h-full object-cover"
                                             onError={(e) => (e.currentTarget.style.display = 'none')}
                                         />

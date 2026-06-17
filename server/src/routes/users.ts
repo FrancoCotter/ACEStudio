@@ -106,7 +106,7 @@ router.get('/:username/songs', async (req, res: Response) => {
         const songsResult = await pool.query(
             `SELECT s.id, s.title, s.lyrics, s.style, s.caption, s.cover_url, s.audio_url,
               s.duration, s.bpm, s.key_scale, s.time_signature, s.tags, s.like_count,
-              s.view_count, s.created_at, u.username as creator
+              s.view_count, s.created_at, s.generation_params, u.username as creator, u.avatar_url as creator_avatar
        FROM songs s
        LEFT JOIN users u ON s.user_id = u.id
        WHERE s.user_id = $1 AND s.is_public = 1
@@ -171,7 +171,7 @@ router.post('/me/avatar', authMiddleware, upload.single('avatar'), async (req: A
 
         const userId = req.user!.id;
         const ext = path.extname(req.file.originalname) || '.jpg';
-        const key = `users/${userId}/avatar${ext}`;
+        const key = `users/${userId}/avatar-${Date.now()}${ext}`;
 
         const storage = getStorageProvider();
         await storage.upload(key, req.file.buffer, req.file.mimetype);
@@ -201,7 +201,7 @@ router.post('/me/banner', authMiddleware, upload.single('banner'), async (req: A
 
         const userId = req.user!.id;
         const ext = path.extname(req.file.originalname) || '.jpg';
-        const key = `users/${userId}/banner${ext}`;
+        const key = `users/${userId}/banner-${Date.now()}${ext}`;
 
         const storage = getStorageProvider();
         await storage.upload(key, req.file.buffer, req.file.mimetype);

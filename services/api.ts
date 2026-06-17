@@ -112,6 +112,7 @@ export interface Song {
   style: string;
   caption?: string;
   cover_url?: string;
+  coverUrl?: string;
   audio_url?: string;
   audioUrl?: string;
   duration?: number;

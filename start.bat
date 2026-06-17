@@ -1,9 +1,9 @@
 @echo off
-REM ACE-Step UI Startup Script for Windows
+REM APEXFlow Startup Script for Windows
 setlocal
 
 echo ==================================
-echo   ACE-Step UI (Windows)
+echo   APEXFlow (Windows)
 echo ==================================
 echo.
 
@@ -29,7 +29,7 @@ for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do (
     )
 )
 
-echo Starting ACE-Step UI...
+echo Starting APEXFlow...
 echo.
 echo Make sure ACE-Step API is running:
 echo   cd path\to\ACE-Step
@@ -40,7 +40,7 @@ echo.
 
 REM Start backend in new window
 echo Starting backend server...
-start "ACE-Step UI Backend" cmd /k "cd server && npm run dev"
+start "APEXFlow Backend" cmd /k "cd server && npm run dev"
 
 REM Wait for backend to start
 echo Waiting for backend to start...
@@ -48,14 +48,14 @@ timeout /t 3 /nobreak >nul
 
 REM Start frontend in new window
 echo Starting frontend...
-start "ACE-Step UI Frontend" cmd /k "npm run dev"
+start "APEXFlow Frontend" cmd /k "npm run dev"
 
 REM Wait a moment
 timeout /t 2 /nobreak >nul
 
 echo.
 echo ==================================
-echo   ACE-Step UI Running!
+echo   APEXFlow Running!
 echo ==================================
 echo.
 echo   Frontend: http://localhost:3000

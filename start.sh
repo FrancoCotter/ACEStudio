@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start ACE-Step UI (both frontend and backend)
+# Start APEXFlow (both frontend and backend)
 
 set -e
 
@@ -14,7 +14,7 @@ if [ ! -d "$ACESTEP_PATH" ]; then
     exit 1
 fi
 
-echo "Starting ACE-Step UI..."
+echo "Starting APEXFlow..."
 echo "ACE-Step: $ACESTEP_PATH"
 echo ""
 
@@ -35,7 +35,7 @@ FRONTEND_PID=$!
 
 echo ""
 echo "=================================="
-echo "  ACE-Step UI Running"
+echo "  APEXFlow Running"
 echo "=================================="
 echo ""
 echo "  Frontend: http://localhost:${FRONTEND_PORT:-3000}"

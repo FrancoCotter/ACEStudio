@@ -1,9 +1,9 @@
 @echo off
-REM ACE-Step UI Setup Script for Windows
+REM APEXFlow Setup Script for Windows
 setlocal enabledelayedexpansion
 
 echo ==================================
-echo   ACE-Step UI Setup (Windows)
+echo   APEXFlow Setup (Windows)
 echo ==================================
 echo.
 
@@ -65,7 +65,7 @@ echo   1. Start ACE-Step API (in ACE-Step folder):
 echo      cd path\to\ACE-Step
 echo      uv run acestep-api --port 8001
 echo.
-echo   2. Start ACE-Step UI:
+echo   2. Start APEXFlow:
 echo      start.bat
 echo.
 echo   3. Open http://localhost:3000

@@ -27,6 +27,7 @@ const VideoGeneratorModal = React.lazy(() =>
 );
 
 const SONGS_PAGE_SIZE = 80;
+const EAGER_SONG_LOAD_THRESHOLD = 120;
 const MAX_RESUMABLE_JOB_AGE_MS = 3 * 60 * 60 * 1000;
 const GENERATION_TIMEOUT_MS = Number(process.env.GENERATION_TIMEOUT_MS || 1800000);
 
@@ -101,6 +102,7 @@ function AppContent() {
   const [likedSongIds, setLikedSongIds] = useState<Set<string>>(new Set());
   const [referenceTracks, setReferenceTracks] = useState<ReferenceTrack[]>([]);
   const [isSongsLoading, setIsSongsLoading] = useState(false);
+  const [hasLoadedInitialSongs, setHasLoadedInitialSongs] = useState(false);
   const [isLoadingMoreSongs, setIsLoadingMoreSongs] = useState(false);
   const [hasMoreSongs, setHasMoreSongs] = useState(false);
   const [songsNextOffset, setSongsNextOffset] = useState(0);
@@ -354,6 +356,47 @@ function AppContent() {
     setSelectedSong(prev => mergeSong(prev) ?? null);
   }, []);
 
+  useEffect(() => {
+    const withVersion = (url: string | undefined, version: number | undefined) => {
+      if (!url || !version || url.startsWith('data:') || url.startsWith('blob:')) return url;
+      return `${url}${url.includes('?') ? '&' : '?'}v=${version}`;
+    };
+
+    const handleProfileUpdated = (event: Event) => {
+      const { username, avatarUrl, bannerUrl, version } = (event as CustomEvent<{
+        username?: string;
+        avatarUrl?: string;
+        bannerUrl?: string;
+        version?: number;
+      }>).detail || {};
+      if (!username) return;
+
+      const nextAvatarUrl = withVersion(avatarUrl, version);
+      const patchSong = (song: Song | null): Song | null => {
+        if (!song || song.creator !== username || !nextAvatarUrl) return song;
+        return { ...song, creator_avatar: nextAvatarUrl };
+      };
+
+      setSongs(prev => prev.map(song => patchSong(song) as Song));
+      setPlayQueue(prev => prev.map(song => patchSong(song) as Song));
+      setCurrentSong(prev => patchSong(prev));
+      setSelectedSong(prev => patchSong(prev));
+      setViewingSongPreview(prev => patchSong(prev));
+      setViewingProfilePreview(prev => (
+        prev?.username === username
+          ? {
+              ...prev,
+              avatar_url: nextAvatarUrl ?? prev.avatar_url,
+              banner_url: withVersion(bannerUrl, version) ?? prev.banner_url,
+            }
+          : prev
+      ));
+    };
+
+    window.addEventListener('profile-updated', handleProfileUpdated);
+    return () => window.removeEventListener('profile-updated', handleProfileUpdated);
+  }, []);
+
   const handleSelectSong = useCallback((song: Song) => {
     setSelectedSong(song);
     openRightSidebar();
@@ -486,8 +529,11 @@ function AppContent() {
       setHasMoreSongs(false);
       setSongsNextOffset(0);
       setTotalSongCount(null);
+      setHasLoadedInitialSongs(true);
       return;
     }
+
+    setHasLoadedInitialSongs(false);
 
     const loadSongs = async () => {
       setIsSongsLoading(true);
@@ -498,7 +544,24 @@ function AppContent() {
           offset: 0,
         });
 
-        const loadedSongs = mySongsRes.songs.map(s => mapApiSong(s, true));
+        let allSongs = [...mySongsRes.songs];
+        let nextOffset = mySongsRes.nextOffset ?? allSongs.length;
+        const totalSongs = mySongsRes.total ?? allSongs.length;
+
+        if (mySongsRes.hasMore && totalSongs <= EAGER_SONG_LOAD_THRESHOLD) {
+          while (allSongs.length < totalSongs) {
+            const nextPage = await songsApi.getMySongs(token, {
+              limit: SONGS_PAGE_SIZE,
+              offset: nextOffset,
+            });
+            if (!nextPage.songs.length) break;
+            allSongs = [...allSongs, ...nextPage.songs];
+            nextOffset = nextPage.nextOffset ?? (nextOffset + nextPage.songs.length);
+            if (!nextPage.hasMore) break;
+          }
+        }
+
+        const loadedSongs = allSongs.map(s => mapApiSong(s, true));
 
         // Preserve any generating songs (temp songs)
         setSongs(prev => {
@@ -506,14 +569,15 @@ function AppContent() {
           return [...generatingSongs, ...loadedSongs];
         });
         setLikedSongIds(new Set(loadedSongs.filter(s => s.isLiked).map(s => s.id)));
-        setHasMoreSongs(Boolean(mySongsRes.hasMore));
-        setSongsNextOffset(mySongsRes.nextOffset ?? loadedSongs.length);
-        setTotalSongCount(mySongsRes.total ?? loadedSongs.length);
+        setHasMoreSongs(loadedSongs.length < totalSongs);
+        setSongsNextOffset(loadedSongs.length);
+        setTotalSongCount(totalSongs);
 
       } catch (error) {
         console.error('Failed to load songs:', error);
       } finally {
         setIsSongsLoading(false);
+        setHasLoadedInitialSongs(true);
       }
     };
 
@@ -988,7 +1052,24 @@ function AppContent() {
         limit: Math.max(SONGS_PAGE_SIZE, songsNextOffset || SONGS_PAGE_SIZE),
         offset: 0,
       });
-      const loadedSongs: Song[] = response.songs.map(s => mapApiSong(s, true));
+      let allSongs = [...response.songs];
+      let nextOffset = response.nextOffset ?? allSongs.length;
+      const totalSongs = response.total ?? allSongs.length;
+
+      if (response.hasMore && totalSongs <= EAGER_SONG_LOAD_THRESHOLD) {
+        while (allSongs.length < totalSongs) {
+          const nextPage = await songsApi.getMySongs(token, {
+            limit: SONGS_PAGE_SIZE,
+            offset: nextOffset,
+          });
+          if (!nextPage.songs.length) break;
+          allSongs = [...allSongs, ...nextPage.songs];
+          nextOffset = nextPage.nextOffset ?? (nextOffset + nextPage.songs.length);
+          if (!nextPage.hasMore) break;
+        }
+      }
+
+      const loadedSongs: Song[] = allSongs.map(s => mapApiSong(s, true));
 
       // Preserve any generating songs that aren't in the loaded list
       setSongs(prev => {
@@ -1003,9 +1084,9 @@ function AppContent() {
         return mergedSongs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       });
       setLikedSongIds(new Set(loadedSongs.filter(s => s.isLiked).map(s => s.id)));
-      setHasMoreSongs(Boolean(response.hasMore));
-      setSongsNextOffset(response.nextOffset ?? loadedSongs.length);
-      setTotalSongCount(response.total ?? loadedSongs.length);
+      setHasMoreSongs(loadedSongs.length < totalSongs);
+      setSongsNextOffset(loadedSongs.length);
+      setTotalSongCount(totalSongs);
 
       // If the current selection was a temp/generating song, replace it with newest real song
       const current = selectedSongRef.current;
@@ -1821,7 +1902,7 @@ function AppContent() {
     }
   };
 
-  const showStartupLoading = authLoading || (isAuthenticated && isSongsLoading && songs.length === 0);
+  const showStartupLoading = authLoading || !hasLoadedInitialSongs;
   if (showStartupLoading) {
     return (
       <StartupLoading

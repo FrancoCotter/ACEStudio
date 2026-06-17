@@ -94,6 +94,37 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
     }
   }, [token]);
 
+  useEffect(() => {
+    const withVersion = (url: string | undefined, version: number | undefined) => {
+      if (!url || !version || url.startsWith('data:') || url.startsWith('blob:')) return url;
+      return `${url}${url.includes('?') ? '&' : '?'}v=${version}`;
+    };
+
+    const handleProfileUpdated = (event: Event) => {
+      const { username, avatarUrl, bannerUrl, version } = (event as CustomEvent<{
+        username?: string;
+        avatarUrl?: string;
+        bannerUrl?: string;
+        version?: number;
+      }>).detail || {};
+      if (!username) return;
+
+      setUser(prev => {
+        if (!prev || prev.username !== username) return prev;
+        const nextUser = {
+          ...prev,
+          avatar_url: avatarUrl ? withVersion(avatarUrl, version) : prev.avatar_url,
+          banner_url: bannerUrl ? withVersion(bannerUrl, version) : prev.banner_url,
+        };
+        localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+        return nextUser;
+      });
+    };
+
+    window.addEventListener('profile-updated', handleProfileUpdated);
+    return () => window.removeEventListener('profile-updated', handleProfileUpdated);
+  }, []);
+
   const value: AuthContextType = {
     user,
     token,

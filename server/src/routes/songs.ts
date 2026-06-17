@@ -118,7 +118,7 @@ router.get('/', authMiddleware, async (req: AuthenticatedRequest, res: Response)
       `SELECT s.id, s.title, ${summary ? "'' as lyrics" : 's.lyrics'}, s.style, s.caption, s.cover_url, s.audio_url,
               s.duration, s.bpm, s.key_scale, s.time_signature, s.tags, s.is_public, 
               s.like_count, s.view_count, s.user_id, s.created_at, s.generation_params,
-              COALESCE(u.username, 'Anonymous') as creator,
+              COALESCE(u.username, 'Anonymous') as creator, u.avatar_url as creator_avatar,
               CASE WHEN ls.song_id IS NOT NULL THEN true ELSE false END as is_liked
        FROM songs s
        LEFT JOIN users u ON s.user_id = u.id
@@ -155,7 +155,8 @@ router.get('/public/featured', optionalAuthMiddleware, async (req: Authenticated
     const result = await pool.query(
       `SELECT s.id, s.title, s.lyrics, s.style, s.caption, s.cover_url, s.audio_url,
               s.duration, s.bpm, s.key_scale, s.time_signature, s.tags, s.like_count, s.view_count, s.created_at, s.user_id,
-              COALESCE(u.username, 'Anonymous') as creator, u.avatar_url as creator_avatar, s.generation_params,
+              s.like_count, s.view_count, s.user_id, s.created_at, s.generation_params,
+              COALESCE(u.username, 'Anonymous') as creator, u.avatar_url as creator_avatar,
               CASE WHEN ls.song_id IS NOT NULL THEN true ELSE false END as is_liked
        FROM songs s
        LEFT JOIN users u ON s.user_id = u.id

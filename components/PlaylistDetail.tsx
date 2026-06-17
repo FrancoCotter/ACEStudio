@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Song, Playlist, playlistsApi, songsApi, getAudioUrl, getCoverUrl } from '../services/api';
+import { Song, Playlist } from '../types';
+import { playlistsApi, songsApi, getAudioUrl, getCoverUrl } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { ArrowLeft, Play, MoreHorizontal, Clock, Calendar, Shuffle, Trash2, Mic2, Music } from 'lucide-react';

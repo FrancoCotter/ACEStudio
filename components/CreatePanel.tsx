@@ -155,6 +155,22 @@ type CreatePanelDraft = {
   instrumental?: boolean;
   vocalLanguage?: string;
   vocalGender?: 'male' | 'female' | '';
+  bpm?: number;
+  keyScale?: string;
+  timeSignature?: string;
+  showAdvanced?: boolean;
+  duration?: number;
+  inferenceSteps?: number;
+  thinking?: boolean;
+  useAdg?: boolean;
+  guidanceScale?: number;
+  randomSeed?: boolean;
+  seed?: number;
+  enhance?: boolean;
+  audioFormat?: 'mp3' | 'flac';
+  inferMethod?: 'ode' | 'sde';
+  shift?: number;
+  dcwEnabled?: boolean;
 };
 
 type CustomExampleSnapshot = {
@@ -219,13 +235,13 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
   const [vocalGender, setVocalGender] = useState<'male' | 'female' | ''>(() => initialDraft.vocalGender || '');
 
   // Music Parameters
-  const [bpm, setBpm] = useState(0);
-  const [keyScale, setKeyScale] = useState('');
-  const [timeSignature, setTimeSignature] = useState('');
+  const [bpm, setBpm] = useState(() => initialDraft.bpm ?? 0);
+  const [keyScale, setKeyScale] = useState(() => initialDraft.keyScale || '');
+  const [timeSignature, setTimeSignature] = useState(() => initialDraft.timeSignature || '');
 
   // Advanced Settings
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [duration, setDuration] = useState(-1);
+  const [showAdvanced, setShowAdvanced] = useState(() => initialDraft.showAdvanced ?? false);
+  const [duration, setDuration] = useState(() => initialDraft.duration ?? -1);
   const [batchSize, setBatchSize] = useState(() => {
     const stored = localStorage.getItem('ace-batchSize');
     return stored ? Number(stored) : 1;
@@ -234,19 +250,19 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
     const stored = localStorage.getItem('ace-bulkCount');
     return stored ? Number(stored) : 1;
   });
-  const [guidanceScale, setGuidanceScale] = useState(9.0);
-  const [randomSeed, setRandomSeed] = useState(true);
-  const [seed, setSeed] = useState(-1);
-  const [thinking, setThinking] = useState(false); // Default false for GPU compatibility
-  const [enhance, setEnhance] = useState(false); // AI Enhance: uses LLM to enrich caption & generate metadata
-  const [audioFormat, setAudioFormat] = useState<'mp3' | 'flac'>('mp3');
-  const [inferenceSteps, setInferenceSteps] = useState(12);
-  const [inferMethod, setInferMethod] = useState<'ode' | 'sde'>('ode');
+  const [guidanceScale, setGuidanceScale] = useState(() => initialDraft.guidanceScale ?? 9.0);
+  const [randomSeed, setRandomSeed] = useState(() => initialDraft.randomSeed ?? true);
+  const [seed, setSeed] = useState(() => initialDraft.seed ?? -1);
+  const [thinking, setThinking] = useState(() => initialDraft.thinking ?? false); // Default false for GPU compatibility
+  const [enhance, setEnhance] = useState(() => initialDraft.enhance ?? false); // AI Enhance: uses LLM to enrich caption & generate metadata
+  const [audioFormat, setAudioFormat] = useState<'mp3' | 'flac'>(() => initialDraft.audioFormat || 'mp3');
+  const [inferenceSteps, setInferenceSteps] = useState(() => initialDraft.inferenceSteps ?? 12);
+  const [inferMethod, setInferMethod] = useState<'ode' | 'sde'>(() => initialDraft.inferMethod || 'ode');
   const [lmBackend, setLmBackend] = useState<'pt' | 'vllm'>('pt');
   const [lmModel, setLmModel] = useState(() => {
     return localStorage.getItem('ace-lmModel') || 'acestep-5Hz-lm-0.6B';
   });
-  const [shift, setShift] = useState(3.0);
+  const [shift, setShift] = useState(() => initialDraft.shift ?? 3.0);
 
   // LM Parameters (under Expert)
   const [showLmParams, setShowLmParams] = useState(false);
@@ -267,7 +283,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
   const [instruction, setInstruction] = useState('Fill the audio semantic mask based on the given conditions:');
   const [audioCoverStrength, setAudioCoverStrength] = useState(1.0);
   const [taskType, setTaskType] = useState('text2music');
-  const [useAdg, setUseAdg] = useState(false);
+  const [useAdg, setUseAdg] = useState(() => initialDraft.useAdg ?? false);
   const [cfgIntervalStart, setCfgIntervalStart] = useState(0.0);
   const [cfgIntervalEnd, setCfgIntervalEnd] = useState(1.0);
   const [customTimesteps, setCustomTimesteps] = useState('');
@@ -291,6 +307,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
 
    // DCW Parameters
   const [dcwEnabled, setDcwEnabled] = useState(() => {
+    if (initialDraft.dcwEnabled !== undefined) return initialDraft.dcwEnabled;
     const storedModel = localStorage.getItem('ace-model') || 'acestep-v15-turbo-shift3';
     return !shouldDefaultDcwOff(storedModel);
   });
@@ -660,8 +677,49 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
       instrumental,
       vocalLanguage,
       vocalGender,
+      bpm,
+      keyScale,
+      timeSignature,
+      showAdvanced,
+      duration,
+      inferenceSteps,
+      thinking,
+      useAdg,
+      guidanceScale,
+      randomSeed,
+      seed,
+      enhance,
+      audioFormat,
+      inferMethod,
+      shift,
+      dcwEnabled,
     };
-  }, [customMode, songDescription, lyrics, style, title, instrumental, vocalLanguage, vocalGender]);
+  }, [
+    customMode,
+    songDescription,
+    lyrics,
+    style,
+    title,
+    instrumental,
+    vocalLanguage,
+    vocalGender,
+    bpm,
+    keyScale,
+    timeSignature,
+    showAdvanced,
+    duration,
+    inferenceSteps,
+    thinking,
+    useAdg,
+    guidanceScale,
+    randomSeed,
+    seed,
+    enhance,
+    audioFormat,
+    inferMethod,
+    shift,
+    dcwEnabled,
+  ]);
 
   useEffect(() => {
     if (!pendingAudioSelection) return;
@@ -1693,7 +1751,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                   max="4"
                   step="1"
                   value={batchSize}
-                  onChange={setBatchSize}
+                  onChange={(e) => setBatchSize(Number(e.target.value))}
                   className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#8fb68f]"
                 />
                 <p className="text-[10px] text-zinc-500">{t('numberOfVariations')}</p>
