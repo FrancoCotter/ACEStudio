@@ -77,10 +77,11 @@ This fork transforms the original client into a streamlined, local-first music s
 
 ### 🎙️ Lyrics & Scoring Integration
 * **Score & Synced LRC Sync**: Fully connected backend scoring (quality metrics) and LRC synced lyric generation.
-  * > [!WARNING]
-  * > **Memory Hint**: If your GPU VRAM is limited (e.g., 4GB–8GB), it is **not recommended** to enable both **Score** and **LRC** simultaneously during generation. This saves memory and prevents Python fallback from running out of VRAM.
-  * > [!NOTE]
-  * > **LRC & CoT Alignment**: For high-quality synced lyrics, LRC generation **must be paired with Thinking Mode (CoT)** enabled. Enabling CoT allows the model to correctly reason about and output accurate timeline timestamps matching the vocals.
+   > [!WARNING]  
+   > **Memory Hint**: If your GPU VRAM is limited (e.g., 4GB–8GB), it is **not recommended** to enable both **Score** and **LRC** simultaneously during generation. This saves memory and prevents Python fallback from running out of VRAM.
+   >
+   > [!NOTE]   
+   > **LRC & CoT Alignment**: For high-quality synced lyrics, LRC generation **must be paired with Thinking Mode (CoT)** enabled. Enabling CoT allows the model to correctly reason about and output accurate timeline timestamps matching the vocals.
 * **Karaoke Mode**: Synced LRC lyrics activate an interactive, Karaoke-style scrolling display in fullscreen playback.
 * **Click-to-Seek**: Click on any scrolling lyric line to jump the player directly to that part of the song.
 
@@ -237,15 +238,15 @@ Use this option if you prefer to keep the model preloaded in VRAM for rapid cons
      ```bash
      uv run acestep --port 8001 --enable-api --backend pt --server-name 127.0.0.1
      ```
-   * *Windows Portable build*:
+   * *If using the official ACE-Step 1.5 Windows Portable release*:
      ```batch
      python_embeded\python -m acestep --port 8001 --enable-api --backend pt --server-name 127.0.0.1
      ```
-2. **Start the APEXFlow UI** (in the `APEXFlow` directory):
+2. **Start the APEXFlow** (in the `APEXFlow` directory):
    * *Windows*: run `start.bat`
    * *macOS / Linux*: run `./start.sh`
 
-> [!WARNING]
+> [!WARNING]  
 > When using Gradio API Mode, the synchronous connection prevents the Node backend from reading real-time logs. The progress bar in the UI will stay static at `3%` (`Generating music via Gradio...`) and jump directly to `100%` when completed. Additionally, GPU VRAM remains occupied as long as the Gradio server runs.
 
 To stop the services on macOS / Linux:
