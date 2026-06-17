@@ -1,5 +1,5 @@
 {
-  "name": "Suno Clone UI",
-  "description": "A high-fidelity recreation of the Suno AI music generation interface using React, Tailwind CSS, and Gemini for lyric generation.",
+  "name": "APEXFlow",
+  "description": "A local-first AI music studio for ACE-Step 1.5. Generation, synced lyrics, visualizers, library playback, and local workflow tuning.",
   "requestFramePermissions": []
 }

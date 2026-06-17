@@ -1,6 +1,6 @@
 {
-  "name": "ace-step-ui-server",
-  "version": "1.0.0",
+  "name": "apexflow-server",
+  "version": "2.5.0",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
