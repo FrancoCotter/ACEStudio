@@ -92,6 +92,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
         typeof generationParams.vaeModel === 'string' && generationParams.vaeModel ? { label: 'VAE', value: generationParams.vaeModel } : null,
         typeof generationParams.dcwEnabled === 'boolean' ? { label: 'DCW', value: generationParams.dcwEnabled ? 'On' : 'Off' } : null,
     ].filter(Boolean) as Array<{ label: string; value: string }> : [];
+    const hasGenerationSources = Boolean(song?.generationParams?.referenceAudioUrl || song?.generationParams?.sourceAudioUrl);
 
     useEffect(() => {
         if (song) {
@@ -525,21 +526,25 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                     </div>
 
                     {generationFacts.length > 0 && (
-                        <div className="space-y-2">
-                            <div className="flex items-center gap-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
-                                <Sparkles size={14} />
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-[0.18em]">
+                                <Sparkles size={13} />
                                 Generation
                             </div>
-                            <div className="flex flex-wrap gap-2">
-                                {generationFacts.map((fact) => (
+                            <div className="space-y-0.5">
+                                {generationFacts.map((fact, index) => (
                                     <div
                                         key={`${fact.label}-${fact.value}`}
-                                        className="rounded-lg border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 px-2.5 py-2 min-w-[96px]"
+                                        className={`grid grid-cols-[88px_minmax(0,1fr)] items-baseline gap-x-4 py-1.5 ${
+                                            index !== generationFacts.length - 1
+                                                ? 'border-b border-zinc-200/40 dark:border-white/5'
+                                                : ''
+                                        }`}
                                     >
-                                        <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                                        <div className="text-[10px] leading-5 font-semibold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-500">
                                             {fact.label}
                                         </div>
-                                        <div className="mt-1 text-sm font-semibold text-zinc-900 dark:text-white break-words">
+                                        <div className="min-w-0 text-sm leading-5 text-zinc-800 dark:text-zinc-200 break-words">
                                             {fact.value}
                                         </div>
                                     </div>
@@ -548,7 +553,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                         </div>
                     )}
 
-                    {(song.generationParams?.referenceAudioUrl || song.generationParams?.sourceAudioUrl) && (
+                    {hasGenerationSources && (
                         <div className="space-y-3">
                             <div className="flex items-center gap-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
                                 <LinkIcon size={14} />
@@ -631,7 +636,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                         </div>
                     )}
 
-                    <div className="h-px bg-zinc-200 dark:bg-white/5 w-full"></div>
+                    {hasGenerationSources ? (
+                        <div className="h-px bg-zinc-200 dark:bg-white/5 w-full"></div>
+                    ) : (
+                        <div className="pt-1"></div>
+                    )}
 
                     {/* Caption / Tags */}
                     <div className="space-y-2">
