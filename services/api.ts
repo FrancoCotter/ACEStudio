@@ -75,6 +75,10 @@ export interface User {
   bio?: string;
   avatar_url?: string;
   banner_url?: string;
+  avatar_focus_x?: number;
+  avatar_focus_y?: number;
+  banner_focus_x?: number;
+  banner_focus_y?: number;
   createdAt?: string;
 }
 
@@ -112,7 +116,6 @@ export interface Song {
   style: string;
   caption?: string;
   cover_url?: string;
-  coverUrl?: string;
   audio_url?: string;
   audioUrl?: string;
   duration?: number;
@@ -511,6 +514,14 @@ export interface UserProfile extends User {
   created_at: string;
 }
 
+export interface SubjectDetection {
+  kind: 'face' | 'person' | 'center';
+  confidence: number;
+  detector: 'mediapipe' | 'opencv' | 'unavailable';
+  box: { x: number; y: number; width: number; height: number };
+  focus: { x: number; y: number };
+}
+
 export const usersApi = {
   getProfile: (username: string, token?: string | null): Promise<{ user: UserProfile }> =>
     api(`/api/users/${username}`, { token: token || undefined }),
@@ -527,9 +538,20 @@ export const usersApi = {
   updateProfile: (updates: Partial<User>, token: string): Promise<{ user: User }> =>
     api('/api/users/me', { method: 'PATCH', body: updates, token }),
 
-  uploadAvatar: async (file: File, token: string): Promise<{ user: UserProfile; url: string }> => {
+  detectImageFocus: async (file: File, token: string): Promise<{ subject: SubjectDetection }> => {
+    const formData = new FormData();
+    formData.append('image', file);
+    const response = await fetch(`${API_BASE}/api/users/me/image-focus`, {
+      method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData,
+    });
+    if (!response.ok) throw new Error('Image focus detection failed');
+    return response.json();
+  },
+
+  uploadAvatar: async (file: File, token: string, subject?: SubjectDetection | null): Promise<{ user: UserProfile; url: string; subject: SubjectDetection }> => {
     const formData = new FormData();
     formData.append('avatar', file);
+    if (subject) formData.append('subject', JSON.stringify(subject));
     const response = await fetch(`${API_BASE}/api/users/me/avatar`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` },
@@ -542,9 +564,10 @@ export const usersApi = {
     return response.json();
   },
 
-  uploadBanner: async (file: File, token: string): Promise<{ user: UserProfile; url: string }> => {
+  uploadBanner: async (file: File, token: string, subject?: SubjectDetection | null): Promise<{ user: UserProfile; url: string; subject: SubjectDetection }> => {
     const formData = new FormData();
     formData.append('banner', file);
+    if (subject) formData.append('subject', JSON.stringify(subject));
     const response = await fetch(`${API_BASE}/api/users/me/banner`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` },

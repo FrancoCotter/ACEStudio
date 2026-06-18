@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Camera, Image as ImageIcon, Upload, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { usersApi, UserProfile } from '../services/api';
+import { usersApi, UserProfile, SubjectDetection } from '../services/api';
 import { useI18n } from '../context/I18nContext';
 import { getAvatarUrl } from '../utils/avatar';
 
@@ -27,6 +27,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
     const [bannerFile, setBannerFile] = useState<File | null>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
     const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+    const [avatarSubject, setAvatarSubject] = useState<SubjectDetection | null>(null);
+    const [bannerSubject, setBannerSubject] = useState<SubjectDetection | null>(null);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const [uploadingBanner, setUploadingBanner] = useState(false);
     const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -53,6 +55,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
             setBannerFile(null);
             setAvatarPreview(null);
             setBannerPreview(null);
+            setAvatarSubject(null);
+            setBannerSubject(null);
             setUsernameError('');
         } catch (error) {
             console.error('Failed to load profile:', error);
@@ -61,23 +65,43 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
         }
     };
 
-    const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
             setAvatarFile(file);
+            setAvatarSubject(null);
             const reader = new FileReader();
             reader.onload = (ev) => setAvatarPreview(ev.target?.result as string);
             reader.readAsDataURL(file);
+            if (token) {
+                try {
+                    const { subject } = await usersApi.detectImageFocus(file, token);
+                    setAvatarSubject(subject);
+                    console.info('[face-detection] avatar preview', subject);
+                } catch (error) {
+                    console.warn('[face-detection] avatar preview failed', error);
+                }
+            }
         }
     };
 
-    const handleBannerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleBannerChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
             setBannerFile(file);
+            setBannerSubject(null);
             const reader = new FileReader();
             reader.onload = (ev) => setBannerPreview(ev.target?.result as string);
             reader.readAsDataURL(file);
+            if (token) {
+                try {
+                    const { subject } = await usersApi.detectImageFocus(file, token);
+                    setBannerSubject(subject);
+                    console.info('[face-detection] banner preview', subject);
+                } catch (error) {
+                    console.warn('[face-detection] banner preview failed', error);
+                }
+            }
         }
     };
 
@@ -114,19 +138,29 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
 
             let nextAvatarUrl = editAvatarUrl;
             let nextBannerUrl = editBannerUrl;
+            let nextAvatarFocusX = profile.avatar_focus_x ?? 0.5;
+            let nextAvatarFocusY = profile.avatar_focus_y ?? 0.5;
+            let nextBannerFocusX = profile.banner_focus_x ?? 0.5;
+            let nextBannerFocusY = profile.banner_focus_y ?? 0.5;
 
             if (avatarFile) {
                 setUploadingAvatar(true);
-                const avatarRes = await usersApi.uploadAvatar(avatarFile, token);
+                const avatarRes = await usersApi.uploadAvatar(avatarFile, token, avatarSubject);
                 nextAvatarUrl = avatarRes.url;
+                nextAvatarFocusX = avatarRes.subject.focus.x;
+                nextAvatarFocusY = avatarRes.subject.focus.y;
+                console.info('[face-detection] avatar', avatarRes.subject);
                 setEditAvatarUrl(nextAvatarUrl);
                 setUploadingAvatar(false);
             }
 
             if (bannerFile) {
                 setUploadingBanner(true);
-                const bannerRes = await usersApi.uploadBanner(bannerFile, token);
+                const bannerRes = await usersApi.uploadBanner(bannerFile, token, bannerSubject);
                 nextBannerUrl = bannerRes.url;
+                nextBannerFocusX = bannerRes.subject.focus.x;
+                nextBannerFocusY = bannerRes.subject.focus.y;
+                console.info('[face-detection] banner', bannerRes.subject);
                 setEditBannerUrl(nextBannerUrl);
                 setUploadingBanner(false);
             }
@@ -145,6 +179,10 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
                 bio: editBio,
                 avatar_url: nextAvatarUrl,
                 banner_url: nextBannerUrl,
+                avatar_focus_x: nextAvatarFocusX,
+                avatar_focus_y: nextAvatarFocusY,
+                banner_focus_x: nextBannerFocusX,
+                banner_focus_y: nextBannerFocusY,
             };
 
             if (Object.keys(updates).length > 0) {
@@ -208,6 +246,11 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
     const avatarDisplayUrl = avatarPreview
         || withVersion(getAvatarUrl(editAvatarUrl, editUsername || profile?.username), assetVersion);
     const bannerDisplayUrl = bannerPreview || withVersion(editBannerUrl, assetVersion);
+    const avatarFocus = `${(profile?.avatar_focus_x ?? 0.5) * 100}% ${(profile?.avatar_focus_y ?? 0.5) * 100}%`;
+    const avatarPreviewFocus = avatarSubject ? `${avatarSubject.focus.x * 100}% ${avatarSubject.focus.y * 100}%` : 'center';
+    const previewBannerX = bannerSubject?.focus.x ?? profile?.banner_focus_x ?? 0.5;
+    const previewBannerY = bannerSubject?.focus.y ?? profile?.banner_focus_y ?? 0.5;
+    const bannerEditorFocus = `${previewBannerX * 100}% ${Math.max(0, previewBannerY - 0.2) * 100}%`;
 
     if (!isOpen) return null;
 
@@ -260,6 +303,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
                                             <img
                                                 src={avatarDisplayUrl}
                                                 className="w-full h-full object-cover"
+                                                style={{ objectPosition: avatarPreview ? avatarPreviewFocus : avatarFocus }}
                                                 onError={(e) => (e.currentTarget.style.display = 'none')}
                                             />
                                         ) : (
@@ -305,6 +349,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
                                         <img
                                             src={bannerDisplayUrl}
                                             className="w-full h-full object-cover"
+                                            style={{ objectPosition: bannerEditorFocus }}
                                             onError={(e) => (e.currentTarget.style.display = 'none')}
                                         />
                                     ) : (

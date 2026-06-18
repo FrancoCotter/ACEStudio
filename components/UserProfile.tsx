@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Song, Playlist } from '../types';
-import { usersApi, getAudioUrl, getCoverUrl, UserProfile as UserProfileType, songsApi } from '../services/api';
+import { usersApi, getAudioUrl, getCoverUrl, UserProfile as UserProfileType, SubjectDetection, songsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Play, Pause, Heart, Music as MusicIcon, ChevronRight, Edit3, X, Camera, Image as ImageIcon, Upload, Loader2, Info } from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
@@ -50,6 +50,8 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
     const [bannerFile, setBannerFile] = useState<File | null>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
     const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+    const [avatarSubject, setAvatarSubject] = useState<SubjectDetection | null>(null);
+    const [bannerSubject, setBannerSubject] = useState<SubjectDetection | null>(null);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const [uploadingBanner, setUploadingBanner] = useState(false);
     const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -75,6 +77,8 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
         setBannerFile(null);
         setAvatarPreview(null);
         setBannerPreview(null);
+        setAvatarSubject(null);
+        setBannerSubject(null);
     }, [isEditModalOpen, profileUser?.avatar_url, profileUser?.banner_url, profileUser?.bio]);
 
     const applyHeroScrollState = (scrollTop: number) => {
@@ -257,23 +261,43 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
         }
     };
 
-    const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
             setAvatarFile(file);
+            setAvatarSubject(null);
             const reader = new FileReader();
             reader.onload = (ev) => setAvatarPreview(ev.target?.result as string);
             reader.readAsDataURL(file);
+            if (token) {
+                try {
+                    const { subject } = await usersApi.detectImageFocus(file, token);
+                    setAvatarSubject(subject);
+                    console.info('[face-detection] avatar preview', subject);
+                } catch (error) {
+                    console.warn('[face-detection] avatar preview failed', error);
+                }
+            }
         }
     };
 
-    const handleBannerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleBannerChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
             setBannerFile(file);
+            setBannerSubject(null);
             const reader = new FileReader();
             reader.onload = (ev) => setBannerPreview(ev.target?.result as string);
             reader.readAsDataURL(file);
+            if (token) {
+                try {
+                    const { subject } = await usersApi.detectImageFocus(file, token);
+                    setBannerSubject(subject);
+                    console.info('[face-detection] banner preview', subject);
+                } catch (error) {
+                    console.warn('[face-detection] banner preview failed', error);
+                }
+            }
         }
     };
 
@@ -283,12 +307,19 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
         try {
             let nextAvatarUrl = editAvatarUrl;
             let nextBannerUrl = editBannerUrl;
+            let nextAvatarFocusX = profileUser.avatar_focus_x ?? 0.5;
+            let nextAvatarFocusY = profileUser.avatar_focus_y ?? 0.5;
+            let nextBannerFocusX = profileUser.banner_focus_x ?? 0.5;
+            let nextBannerFocusY = profileUser.banner_focus_y ?? 0.5;
 
             // Upload avatar if changed
             if (avatarFile) {
                 setUploadingAvatar(true);
-                const avatarRes = await usersApi.uploadAvatar(avatarFile, token);
+                const avatarRes = await usersApi.uploadAvatar(avatarFile, token, avatarSubject);
                 nextAvatarUrl = avatarRes.url;
+                nextAvatarFocusX = avatarRes.subject.focus.x;
+                nextAvatarFocusY = avatarRes.subject.focus.y;
+                console.info('[face-detection] avatar', avatarRes.subject);
                 setEditAvatarUrl(nextAvatarUrl);
                 setUploadingAvatar(false);
             }
@@ -296,8 +327,11 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
             // Upload banner if changed
             if (bannerFile) {
                 setUploadingBanner(true);
-                const bannerRes = await usersApi.uploadBanner(bannerFile, token);
+                const bannerRes = await usersApi.uploadBanner(bannerFile, token, bannerSubject);
                 nextBannerUrl = bannerRes.url;
+                nextBannerFocusX = bannerRes.subject.focus.x;
+                nextBannerFocusY = bannerRes.subject.focus.y;
+                console.info('[face-detection] banner', bannerRes.subject);
                 setEditBannerUrl(nextBannerUrl);
                 setUploadingBanner(false);
             }
@@ -316,6 +350,10 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                 bio: editBio,
                 avatar_url: nextAvatarUrl,
                 banner_url: nextBannerUrl,
+                avatar_focus_x: nextAvatarFocusX,
+                avatar_focus_y: nextAvatarFocusY,
+                banner_focus_x: nextBannerFocusX,
+                banner_focus_y: nextBannerFocusY,
             };
             if (Object.keys(updates).length > 0) {
                 const updateRes = await usersApi.updateProfile(updates, token);
@@ -434,8 +472,16 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
         .map(song => getModelDisplayName(song.ditModel || song.generationParams?.ditModel || song.generationParams?.dit_model))
         .filter(Boolean)))
         .slice(0, 8);
+    const heroFocus = `${(profileUser?.banner_focus_x ?? 0.5) * 100}% ${(profileUser?.banner_focus_y ?? 0.5) * 100}%`;
+    const avatarFocus = `${(profileUser?.avatar_focus_x ?? 0.5) * 100}% ${(profileUser?.avatar_focus_y ?? 0.5) * 100}%`;
+    const avatarPreviewFocus = avatarSubject ? `${avatarSubject.focus.x * 100}% ${avatarSubject.focus.y * 100}%` : 'center';
+    const previewBannerX = bannerSubject?.focus.x ?? profileUser?.banner_focus_x ?? 0.5;
+    const previewBannerY = bannerSubject?.focus.y ?? profileUser?.banner_focus_y ?? 0.5;
+    // A 3:1 editor preview crops much more vertically than the Hero canvas.
+    // Pull the crop upward so the complete face, not just its center, stays visible.
+    const bannerEditorFocus = `${previewBannerX * 100}% ${Math.max(0, previewBannerY - 0.2) * 100}%`;
     const heroStyle = heroCoverUrl
-        ? { backgroundImage: `url(${heroCoverUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+        ? { backgroundImage: `url(${heroCoverUrl})`, backgroundSize: 'cover', backgroundPosition: heroFocus }
         : {};
     const seededValue = (seed: string, offset: number) => {
         let hash = 2166136261 + offset * 374761393;
@@ -610,6 +656,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                         background: `linear-gradient(to top, ${heroPalette.base} 0%, rgba(0,0,0,0.28) 38%, rgba(0,0,0,0) 100%)`,
                     }}
                 />
+                {/* <div className="absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-black/55 to-transparent" /> */}
 
                 <button
                     onClick={onBack}
@@ -710,6 +757,12 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
             </div>
             {/* Content */}
             <div className="relative z-10 -mt-16 md:-mt-20">
+                {/* <div
+                    className="pointer-events-none absolute inset-x-0 top-0 h-28 md:h-36"
+                    style={{
+                        background: `linear-gradient(to bottom, transparent 0%, ${heroPalette.base} 72%, ${heroPalette.base} 100%)`,
+                    }}
+                /> */}
                 <div className="max-w-7xl mx-auto w-full px-4 pt-12 md:px-8 md:pt-16 pb-6 md:pb-8 space-y-8 md:space-y-12">
                 {/* Songs Section */}
                 <section ref={songsSectionRef}>
@@ -806,8 +859,8 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                             ref={infoImageLayerRef}
                             src={profileAvatarUrl}
                             alt={profileUser.username}
-                            className="pointer-events-none absolute inset-0 h-full w-full object-cover object-[center_22%] transition-[opacity,filter,transform] duration-200 will-change-[opacity,filter,transform]"
-                            style={{ opacity: 0.96, filter: 'blur(0px)', transform: 'scale(1)' }}
+                            className="pointer-events-none absolute inset-0 h-full w-full object-cover transition-[opacity,filter,transform] duration-200 will-change-[opacity,filter,transform]"
+                            style={{ opacity: 0.96, filter: 'blur(0px)', transform: 'scale(1)', objectPosition: avatarFocus }}
                             referrerPolicy="no-referrer"
                             onLoad={handleInfoImageLoad}
                         />
@@ -938,6 +991,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                                             <img
                                                 src={avatarPreview || editAvatarPreviewUrl}
                                                 className="w-full h-full object-cover"
+                                                style={{ objectPosition: avatarPreview ? avatarPreviewFocus : avatarFocus }}
                                                 onError={(e) => (e.currentTarget.style.display = 'none')}
                                             />
                                         ) : (
@@ -983,6 +1037,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                                         <img
                                             src={bannerPreview || editBannerPreviewUrl}
                                             className="w-full h-full object-cover"
+                                            style={{ objectPosition: bannerEditorFocus }}
                                             onError={(e) => (e.currentTarget.style.display = 'none')}
                                         />
                                     ) : (

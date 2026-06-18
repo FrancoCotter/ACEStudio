@@ -27,6 +27,42 @@ interface RightSidebarProps {
     currentSong?: Song | null;
 }
 
+const RetryingCoverImage: React.FC<{ url: string; alt: string; className: string; seed: string }> = ({ url, alt, className, seed }) => {
+    const [attempt, setAttempt] = useState(0);
+    const [failed, setFailed] = useState(false);
+
+    useEffect(() => {
+        setAttempt(0);
+        setFailed(false);
+    }, [url]);
+
+    useEffect(() => {
+        if (!failed) return;
+        const delay = Math.min(30_000, 1_500 * (2 ** Math.min(attempt, 5)));
+        const timer = window.setTimeout(() => {
+            setAttempt(value => value + 1);
+            setFailed(false);
+        }, delay);
+        return () => window.clearTimeout(timer);
+    }, [failed, attempt]);
+
+    const retryUrl = `${url}${url.includes('?') ? '&' : '?'}cover_retry=${attempt}`;
+    if (failed) return <AlbumCover seed={seed} size="full" className={className} />;
+
+    return (
+        <img
+            key={retryUrl}
+            src={retryUrl}
+            alt={alt}
+            className={className}
+            onError={() => {
+                console.warn(`[cover-cache] load failed; retry ${attempt + 1} scheduled`, retryUrl);
+                setFailed(true);
+            }}
+        />
+    );
+};
+
 export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpenVideo, onReuse, onSongUpdate, onNavigateToProfile, onNavigateToSong, isLiked, onToggleLike, onDelete, onAddToPlaylist, onPlay, isPlaying, currentSong }) => {
     const { token, user } = useAuth();
     const { t } = useI18n();
@@ -256,12 +292,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                     <div className="p-5 pb-24 lg:pb-32 space-y-6">
                         <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-zinc-200 dark:bg-zinc-800 shadow-2xl ring-1 ring-black/5 dark:ring-white/10">
                             {song.coverUrl ? (
-                                <img
-                                    src={song.coverUrl}
-                                    alt={song.title}
-                                    className="h-full w-full object-cover opacity-45 blur-md scale-110"
-                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                />
+                                <RetryingCoverImage url={song.coverUrl} alt={song.title} seed={song.id || song.title} className="h-full w-full object-cover opacity-45 blur-md scale-110" />
                             ) : (
                                 <AlbumCover seed={song.id || song.title} size="full" className="h-full w-full opacity-45 blur-md scale-110" />
                             )}
@@ -338,7 +369,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                         onClick={() => onPlay?.(song)}
                     >
                         {song.coverUrl ? (
-                            <img src={song.coverUrl} alt={song.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                            <RetryingCoverImage url={song.coverUrl} alt={song.title} seed={song.id || song.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                         ) : null}
                         {!song.coverUrl && <AlbumCover seed={song.id || song.title} size="full" className="w-full h-full" />}
 

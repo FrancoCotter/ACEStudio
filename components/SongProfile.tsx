@@ -399,17 +399,7 @@ export const SongProfile: React.FC<SongProfileProps> = ({ songId, initialSong = 
                     </div>
 
                     {/* Related Songs Tab - Hidden on mobile */}
-                    <div className="hidden md:flex items-center gap-2">
-                        <button className="px-4 py-2 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-full text-sm font-semibold">
-                            Similar
-                        </button>
-                        <button
-                            onClick={() => song.creator && onNavigateToProfile(song.creator)}
-                            className="px-4 py-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white text-sm font-semibold transition-colors"
-                        >
-                            By {song.creator || 'Artist'}
-                        </button>
-                    </div>
+                  
                 </div>
             </div>
 

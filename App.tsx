@@ -1937,14 +1937,6 @@ function AppContent() {
         />
 
         <main className="flex-1 flex overflow-hidden relative">
-          <button
-            onClick={() => setShowLeftSidebar(!showLeftSidebar)}
-            className="hidden md:flex absolute left-0 top-6 z-40 h-11 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-suno-panel text-zinc-500 dark:text-zinc-400 shadow-lg shadow-black/10 dark:shadow-black/30 hover:text-[#6f8f72] dark:hover:text-[#a8c9a4] hover:bg-white dark:hover:bg-[#1d1d20] transition-colors"
-            title={showLeftSidebar ? t('collapseSidebar') : t('expandSidebar')}
-            aria-label={showLeftSidebar ? t('collapseSidebar') : t('expandSidebar')}
-          >
-            {showLeftSidebar ? <ChevronLeft size={17} strokeWidth={2.4} /> : <ChevronRight size={17} strokeWidth={2.4} />}
-          </button>
           {renderContent()}
         </main>
       </div>

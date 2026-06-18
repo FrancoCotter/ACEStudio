@@ -4,6 +4,7 @@ import path from 'path';
 import { pool } from '../db/pool.js';
 import { authMiddleware, optionalAuthMiddleware, AuthenticatedRequest } from '../middleware/auth.js';
 import { getStorageProvider } from '../services/storage/factory.js';
+import { detectSubject } from '../services/subjectDetection.js';
 
 const router = Router();
 
@@ -68,7 +69,8 @@ router.get('/public/featured', async (_req, res: Response) => {
 router.get('/:username', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
     try {
         const result = await pool.query(
-            `SELECT u.id, u.username, u.created_at, u.bio, u.avatar_url, u.banner_url
+            `SELECT u.id, u.username, u.created_at, u.bio, u.avatar_url, u.banner_url,
+                    u.avatar_focus_x, u.avatar_focus_y, u.banner_focus_x, u.banner_focus_y
              FROM users u
              WHERE u.username = $1`,
             [req.params.username]
@@ -162,6 +164,29 @@ router.get('/:username/playlists', async (req, res: Response) => {
 });
 
 // Upload avatar image
+router.post('/me/image-focus', authMiddleware, upload.single('image'), async (req: AuthenticatedRequest, res: Response) => {
+    if (!req.file) {
+        res.status(400).json({ error: 'No file uploaded' });
+        return;
+    }
+    const subject = await detectSubject(req.file.buffer);
+    console.info(`[face-detection] preview: ${subject.kind}, detector=${subject.detector}, focus=${subject.focus.x.toFixed(3)},${subject.focus.y.toFixed(3)}, box=${subject.box.x.toFixed(3)},${subject.box.y.toFixed(3)},${subject.box.width.toFixed(3)},${subject.box.height.toFixed(3)}`);
+    res.json({ subject });
+});
+
+function uploadedSubject(raw: unknown) {
+    if (typeof raw !== 'string') return null;
+    try {
+        const subject = JSON.parse(raw);
+        const x = Number(subject?.focus?.x);
+        const y = Number(subject?.focus?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) return null;
+        return subject;
+    } catch {
+        return null;
+    }
+}
+
 router.post('/me/avatar', authMiddleware, upload.single('avatar'), async (req: AuthenticatedRequest, res: Response) => {
     try {
         if (!req.file) {
@@ -174,16 +199,18 @@ router.post('/me/avatar', authMiddleware, upload.single('avatar'), async (req: A
         const key = `users/${userId}/avatar-${Date.now()}${ext}`;
 
         const storage = getStorageProvider();
+        const subject = uploadedSubject(req.body.subject) || await detectSubject(req.file.buffer);
+        console.info(`[face-detection] avatar: ${subject.kind}, detector=${subject.detector}, focus=${subject.focus.x.toFixed(3)},${subject.focus.y.toFixed(3)}, box=${subject.box.x.toFixed(3)},${subject.box.y.toFixed(3)},${subject.box.width.toFixed(3)},${subject.box.height.toFixed(3)}`);
         await storage.upload(key, req.file.buffer, req.file.mimetype);
         const url = storage.getPublicUrl(key);
 
         // Update user record
         const result = await pool.query(
-            `UPDATE users SET avatar_url = $1, updated_at = datetime('now') WHERE id = $2 RETURNING id, username, created_at, bio, avatar_url, banner_url`,
-            [url, userId]
+            `UPDATE users SET avatar_url = $1, avatar_focus_x = $2, avatar_focus_y = $3, updated_at = datetime('now') WHERE id = $4 RETURNING id, username, created_at, bio, avatar_url, banner_url, avatar_focus_x, avatar_focus_y, banner_focus_x, banner_focus_y`,
+            [url, subject.focus.x, subject.focus.y, userId]
         );
 
-        res.json({ user: result.rows[0], url });
+        res.json({ user: result.rows[0], url, subject });
     } catch (error) {
         console.error('Avatar upload error:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -204,16 +231,18 @@ router.post('/me/banner', authMiddleware, upload.single('banner'), async (req: A
         const key = `users/${userId}/banner-${Date.now()}${ext}`;
 
         const storage = getStorageProvider();
+        const subject = uploadedSubject(req.body.subject) || await detectSubject(req.file.buffer);
+        console.info(`[face-detection] banner: ${subject.kind}, detector=${subject.detector}, focus=${subject.focus.x.toFixed(3)},${subject.focus.y.toFixed(3)}, box=${subject.box.x.toFixed(3)},${subject.box.y.toFixed(3)},${subject.box.width.toFixed(3)},${subject.box.height.toFixed(3)}`);
         await storage.upload(key, req.file.buffer, req.file.mimetype);
         const url = storage.getPublicUrl(key);
 
         // Update user record
         const result = await pool.query(
-            `UPDATE users SET banner_url = $1, updated_at = datetime('now') WHERE id = $2 RETURNING id, username, created_at, bio, avatar_url, banner_url`,
-            [url, userId]
+            `UPDATE users SET banner_url = $1, banner_focus_x = $2, banner_focus_y = $3, updated_at = datetime('now') WHERE id = $4 RETURNING id, username, created_at, bio, avatar_url, banner_url, avatar_focus_x, avatar_focus_y, banner_focus_x, banner_focus_y`,
+            [url, subject.focus.x, subject.focus.y, userId]
         );
 
-        res.json({ user: result.rows[0], url });
+        res.json({ user: result.rows[0], url, subject });
     } catch (error) {
         console.error('Banner upload error:', error);
         res.status(500).json({ error: 'Failed to upload banner' });
