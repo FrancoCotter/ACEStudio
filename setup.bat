@@ -54,6 +54,20 @@ if not exist "server\data" (
     mkdir server\data
 )
 
+REM Install subject detection python dependencies
+set "ACESTEP_ENV=..\ACE-Step-1.5"
+if exist "ACE-Step-1.5" set "ACESTEP_ENV=ACE-Step-1.5"
+if exist "%ACESTEP_ENV%\.venv\Scripts\pip.exe" (
+    echo.
+    echo Installing subject detection python dependencies (opencv-python, mediapipe)...
+    "%ACESTEP_ENV%\.venv\Scripts\pip.exe" install opencv-python mediapipe --quiet
+    if !ERRORLEVEL! EQU 0 (
+        echo Python dependencies installed successfully.
+    ) else (
+        echo Warning: Failed to install python dependencies automatically. Please run: pip install opencv-python mediapipe
+    )
+)
+
 echo.
 echo ==================================
 echo   Setup Complete!

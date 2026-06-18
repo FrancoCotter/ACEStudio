@@ -144,7 +144,7 @@ To enable, start the official ACE-Step Gradio API server in the background (Defa
 | Requirement | Notes |
 | --- | --- |
 | **Node.js** | 18 or newer |
-| **Python** | 3.10+ / 3.11 recommended |
+| **Python** | 3.10+ / 3.11 recommended (requires `opencv-python` and `mediapipe` for smart avatar/banner subject detection) |
 | **ACE-Step 1.5** | Required for real generation |
 | **FFmpeg** | Recommended for audio metadata and processing |
 | **GPU** | NVIDIA CUDA recommended |

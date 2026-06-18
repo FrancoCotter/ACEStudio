@@ -32,6 +32,16 @@ fi
 
 echo "Found ACE-Step at: $ACESTEP_PATH"
 
+# Install subject detection dependencies in ACE-Step venv
+echo "Installing subject detection python dependencies (opencv-python, mediapipe) in ACE-Step venv..."
+if [ -f "$ACESTEP_PATH/.venv/bin/pip" ]; then
+    "$ACESTEP_PATH/.venv/bin/pip" install opencv-python mediapipe --quiet || echo "Warning: Failed to install python dependencies automatically. Please run: pip install opencv-python mediapipe"
+elif [ -f "$ACESTEP_PATH/.venv/Scripts/pip.exe" ]; then
+    "$ACESTEP_PATH/.venv/Scripts/pip.exe" install opencv-python mediapipe --quiet || echo "Warning: Failed to install python dependencies automatically. Please run: pip install opencv-python mediapipe"
+else
+    echo "Warning: pip not found in ACE-Step venv. Please manually install: pip install opencv-python mediapipe"
+fi
+
 # Get absolute path
 ACESTEP_PATH=$(cd "$ACESTEP_PATH" && pwd)
 
