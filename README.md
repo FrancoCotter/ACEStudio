@@ -63,7 +63,7 @@ for people who want to run ACE-Step on their own machine.
 
 <!-- ![APEXFlow Demo](docs/demo.gif) -->
 <!-- If you recorded a high-quality .mov, uncomment the video player tag below instead: -->
-<video autoplay loop muted playsinline src="https://github.com/user-attachments/assets/5c062035-2792-4d2e-9627-40bd840f4fcb" width="100%"></video>
+<video autoplay loop muted playsinline src="https://github.com/user-attachments/assets/650754d9-d212-4eb0-b34e-e94778255388" width="100%"></video>
 
 ---
 
