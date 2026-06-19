@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { SongDropdownMenu } from './SongDropdownMenu';
 import { AlbumCover } from './AlbumCover';
 import { useI18n } from '../context/I18nContext';
+import { hasSongPlaybackSource } from '../utils/songPlayback';
 
 interface LibraryViewProps {
   allSongs: Song[];
@@ -60,8 +61,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const [previewTrackId, setPreviewTrackId] = useState<string | null>(null);
   const [previewProgress, setPreviewProgress] = useState(0);
 
-  const completedAllSongs = allSongs.filter(song => !song.isGenerating && Boolean(song.audioUrl));
-  const completedLikedSongs = likedSongs.filter(song => !song.isGenerating && Boolean(song.audioUrl));
+  const completedAllSongs = allSongs.filter(song => !song.isGenerating && hasSongPlaybackSource(song));
+  const completedLikedSongs = likedSongs.filter(song => !song.isGenerating && hasSongPlaybackSource(song));
   const isSongPlaying = (song: Song) => currentSong?.id === song.id && isPlaying;
 
   const stopUploadPreview = () => {

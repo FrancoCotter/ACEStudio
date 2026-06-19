@@ -14,6 +14,7 @@ export interface Song {
   generationParams?: any;
   tags: string[];
   audioUrl?: string;
+  playbackUrl?: string;
   isPublic?: boolean;
   likeCount?: number;
   like_count?: number;

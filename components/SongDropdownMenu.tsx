@@ -10,6 +10,7 @@ import {
     Download,
     Trash2
 } from 'lucide-react';
+import { getSongAudioAssetUrl, getSongPlaybackUrl, hasSongPlaybackSource } from '../utils/songPlayback';
 
 interface SongDropdownMenuProps {
     song: Song;
@@ -111,31 +112,33 @@ export const SongDropdownMenu: React.FC<SongDropdownMenuProps> = ({
     };
 
     const handleEditAudio = () => {
-        if (!song.audioUrl) return;
-        const audioUrl = song.audioUrl.startsWith('http')
-            ? song.audioUrl
-            : `${window.location.origin}${song.audioUrl}`;
+        const audioAssetUrl = getSongAudioAssetUrl(song);
+        if (!audioAssetUrl) return;
+        const audioUrl = audioAssetUrl.startsWith('http')
+            ? audioAssetUrl
+            : `${window.location.origin}${audioAssetUrl}`;
         window.open(`/editor?audioUrl=${encodeURIComponent(audioUrl)}`, '_blank');
         onClose();
     };
 
     const handleExtractStems = () => {
-        if (!song.audioUrl) return;
+        const audioAssetUrl = getSongAudioAssetUrl(song);
+        if (!audioAssetUrl) return;
         const baseUrl = window.location.port === '3000'
             ? `${window.location.protocol}//${window.location.hostname}:3001`
             : window.location.origin;
-        const audioUrl = song.audioUrl.startsWith('http')
-            ? song.audioUrl
-            : `${baseUrl}${song.audioUrl}`;
+        const audioUrl = audioAssetUrl.startsWith('http')
+            ? audioAssetUrl
+            : `${baseUrl}${audioAssetUrl}`;
         window.open(`${baseUrl}/demucs-web/?audioUrl=${encodeURIComponent(audioUrl)}`, '_blank');
         onClose();
     };
 
     const handleDownload = async () => {
-        if (!song.audioUrl) return;
+        const playbackUrl = getSongPlaybackUrl(song);
+        if (!playbackUrl) return;
         try {
-            // Fetch as blob to handle cross-origin
-            const response = await fetch(song.audioUrl);
+            const response = await fetch(playbackUrl);
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);
 
@@ -200,7 +203,7 @@ export const SongDropdownMenu: React.FC<SongDropdownMenuProps> = ({
                     icon={<Layers size={14} />}
                     label={t('useAsReference')}
                     onClick={() => handleAction(onUseAsReference)}
-                    disabled={!song.audioUrl}
+                    disabled={!hasSongPlaybackSource(song)}
                 />
             )}
             {onCoverSong && (
@@ -208,7 +211,7 @@ export const SongDropdownMenu: React.FC<SongDropdownMenuProps> = ({
                     icon={<Layers size={14} />}
                     label={t('coverSong')}
                     onClick={() => handleAction(onCoverSong)}
-                    disabled={!song.audioUrl}
+                    disabled={!hasSongPlaybackSource(song)}
                 />
             )}
 

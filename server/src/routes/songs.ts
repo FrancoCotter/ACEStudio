@@ -57,7 +57,7 @@ router.get('/:id/audio', optionalAuthMiddleware, async (req: AuthenticatedReques
       return;
     }
 
-    // Local files - redirect
+    // Local files - redirect to the static audio path
     if (audioUrl.startsWith('/')) {
       res.redirect(audioUrl);
       return;

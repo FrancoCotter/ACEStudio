@@ -1,11 +1,12 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Song } from '../types';
-import { Play, Pause, SkipBack, SkipForward, Repeat, Shuffle, Download, Heart, MoreVertical, Volume2, VolumeX, Maximize2, Repeat1, ChevronDown, ChevronUp } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Repeat, Shuffle, Download, Heart, MoreVertical, Volume2, VolumeX, Maximize2, Repeat1, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useResponsive } from '../context/ResponsiveContext';
 import { useI18n } from '../context/I18nContext';
 import { SongDropdownMenu } from './SongDropdownMenu';
 import { AlbumCover } from './AlbumCover';
+import { getSongLyricsUrl, getSongPlaybackUrl } from '../utils/songPlayback';
 
 type CoverPalette = {
     average: string;
@@ -36,6 +37,7 @@ interface PlayerProps {
     onTogglePlay: () => void;
     currentTime: number;
     duration: number;
+    isPlaybackLoading?: boolean;
     onSeek: (time: number) => void;
     onNext: () => void;
     onPrevious: () => void;
@@ -683,6 +685,7 @@ export const Player: React.FC<PlayerProps> = ({
     onTogglePlay,
     currentTime,
     duration,
+    isPlaybackLoading = false,
     onSeek,
     onNext,
     onPrevious,
@@ -727,7 +730,7 @@ export const Player: React.FC<PlayerProps> = ({
     const [fullscreenCoverFailed, setFullscreenCoverFailed] = useState(false);
     const [isBrowsingFullscreenLyrics, setIsBrowsingFullscreenLyrics] = useState(false);
 
-    const shouldLoadSyncedLyrics = Boolean(currentSong?.audioUrl);
+    const shouldLoadSyncedLyrics = Boolean(getSongLyricsUrl(currentSong));
     const activeLyricIndex = useMemo(() => {
         if (!syncedLyrics.length) return -1;
         return getActiveSyncedLyricIndex(syncedLyrics, currentTime);
@@ -769,14 +772,14 @@ export const Player: React.FC<PlayerProps> = ({
     }, [preloadCoverUrls]);
 
     useEffect(() => {
-        if (!currentSong?.audioUrl) {
+        const lrcUrl = getSongLyricsUrl(currentSong);
+        if (!lrcUrl) {
             setSyncedLyrics([]);
             setSyncedLyricsLoading(false);
             return;
         }
 
         let cancelled = false;
-        const lrcUrl = currentSong.audioUrl.replace(/\.[^/.]+$/, '.lrc');
         setSyncedLyrics([]);
         setSyncedLyricsLoading(true);
 
@@ -798,7 +801,7 @@ export const Player: React.FC<PlayerProps> = ({
         return () => {
             cancelled = true;
         };
-    }, [currentSong?.audioUrl]);
+    }, [currentSong?.id, currentSong?.audioUrl, currentSong?.playbackUrl]);
 
     useEffect(() => {
         if (!isFullscreen || isBrowsingFullscreenLyrics || activeLyricIndex < 0) return;
@@ -959,11 +962,25 @@ export const Player: React.FC<PlayerProps> = ({
     };
 
     const progressPercent = duration ? (currentTime / duration) * 100 : 0;
+    const playbackTimeLabel = isPlaybackLoading ? '--:--' : formatTime(currentTime);
+    const playbackDurationLabel = isPlaybackLoading ? '--:--' : formatTime(duration || 0);
+    const playbackButtonClassName = isPlaybackLoading
+        ? 'cursor-wait bg-zinc-300 text-zinc-500 shadow-none dark:bg-zinc-700 dark:text-zinc-300'
+        : 'bg-zinc-900 text-white dark:bg-white dark:text-black shadow-lg';
+    const renderPlaybackGlyph = (playSize: number, pauseSize: number, playClassName = '') => {
+        if (isPlaybackLoading) {
+            return <Loader2 size={pauseSize} className="animate-spin" />;
+        }
+        return isPlaying
+            ? <Pause size={pauseSize} fill="currentColor" />
+            : <Play size={playSize} fill="currentColor" className={playClassName} />;
+    };
 
     const handleDownload = async () => {
-        if (!currentSong?.audioUrl) return;
+        const playbackUrl = getSongPlaybackUrl(currentSong);
+        if (!playbackUrl) return;
         try {
-            const response = await fetch(currentSong.audioUrl);
+            const response = await fetch(playbackUrl);
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
@@ -1059,8 +1076,8 @@ export const Player: React.FC<PlayerProps> = ({
                             </div>
                         </div>
                         <div className="flex justify-between mt-2 text-xs text-zinc-500 dark:text-white/50 font-mono">
-                            <span>{formatTime(currentTime)}</span>
-                            <span>{formatTime(duration || 0)}</span>
+                            <span>{playbackTimeLabel}</span>
+                            <span>{playbackDurationLabel}</span>
                         </div>
                     </div>
 
@@ -1080,9 +1097,10 @@ export const Player: React.FC<PlayerProps> = ({
                         </button>
                         <button
                             onClick={onTogglePlay}
-                            className="w-16 h-16 rounded-full bg-zinc-900 dark:bg-white text-white dark:text-black flex items-center justify-center shadow-lg tap-highlight-none"
+                            disabled={isPlaybackLoading}
+                            className={`w-16 h-16 rounded-full flex items-center justify-center tap-highlight-none ${playbackButtonClassName}`}
                         >
-                            {isPlaying ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" className="ml-1" />}
+                            {renderPlaybackGlyph(32, 32, 'ml-1')}
                         </button>
                         <button
                             onClick={onNext}
@@ -1221,9 +1239,10 @@ export const Player: React.FC<PlayerProps> = ({
                         </button>
                         <button
                             onClick={onTogglePlay}
-                            className="w-11 h-11 rounded-full bg-zinc-900 dark:bg-white text-white dark:text-black flex items-center justify-center shadow-lg tap-highlight-none"
+                            disabled={isPlaybackLoading}
+                            className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg tap-highlight-none ${playbackButtonClassName}`}
                         >
-                            {isPlaying ? <Pause size={22} fill="currentColor" /> : <Play size={22} fill="currentColor" className="ml-0.5" />}
+                            {renderPlaybackGlyph(22, 22, 'ml-0.5')}
                         </button>
                         <button
                             onClick={onNext}
@@ -1447,11 +1466,12 @@ export const Player: React.FC<PlayerProps> = ({
                                 >
                                     <SkipBack size={18} className="sm:h-[22px] sm:w-[22px]" fill="currentColor" />
                                 </button>
-                                <button
-                                    onClick={onTogglePlay}
-                                    className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-zinc-950 text-white flex items-center justify-center shadow-lg shadow-black/20 hover:scale-105 transition-transform dark:bg-white dark:text-black dark:shadow-black/30"
-                                >
-                                    {isPlaying ? <Pause size={18} className="sm:h-5 sm:w-5" fill="currentColor" /> : <Play size={18} className="ml-0.5 sm:h-5 sm:w-5" fill="currentColor" />}
+                        <button
+                            onClick={onTogglePlay}
+                            disabled={isPlaybackLoading}
+                            className={`h-9 w-9 sm:h-10 sm:w-10 rounded-full flex items-center justify-center transition-transform ${isPlaybackLoading ? '' : 'hover:scale-105'} ${playbackButtonClassName} shadow-black/20 dark:shadow-black/30`}
+                        >
+                            {renderPlaybackGlyph(18, 18, 'ml-0.5 sm:h-5 sm:w-5')}
                                 </button>
                                 <button
                                     onClick={() => {
@@ -1474,7 +1494,7 @@ export const Player: React.FC<PlayerProps> = ({
 
                         <div className="flex min-w-0 flex-1 max-w-[30%] lg:max-w-[33%] items-center justify-end gap-1 sm:gap-2 lg:gap-3 text-zinc-500 dark:text-zinc-400">
                             <span className="hidden text-right font-mono text-[10px] text-zinc-600 dark:text-zinc-400 md:block sm:text-xs">
-                                {formatTime(currentTime)} / {formatTime(duration || 0)}
+                                {playbackTimeLabel} / {playbackDurationLabel}
                             </span>
                             <div className="relative hidden lg:block" ref={speedMenuRef}>
                                 <button
@@ -1648,9 +1668,10 @@ export const Player: React.FC<PlayerProps> = ({
                         </button>
                         <button
                             onClick={onTogglePlay}
-                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-zinc-900 dark:bg-white text-white dark:text-black flex items-center justify-center hover:scale-105 transition-transform shadow-lg"
+                            disabled={isPlaybackLoading}
+                            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-transform shadow-lg ${isPlaybackLoading ? '' : 'hover:scale-105'} ${playbackButtonClassName}`}
                         >
-                            {isPlaying ? <Pause size={18} className="sm:w-5 sm:h-5" fill="currentColor" /> : <Play size={18} className="sm:w-5 sm:h-5 ml-0.5" fill="currentColor" />}
+                            {renderPlaybackGlyph(18, 18, 'sm:w-5 sm:h-5 ml-0.5')}
                         </button>
                         <button
                             onClick={onNext}
@@ -1671,7 +1692,7 @@ export const Player: React.FC<PlayerProps> = ({
                 {/* Volume & Extras */}
                 <div className="flex items-center justify-end gap-1 sm:gap-2 lg:gap-3 min-w-0 flex-1 max-w-[30%] lg:max-w-[33%] text-zinc-500 dark:text-zinc-400">
                     <span className="text-[10px] sm:text-xs font-mono text-right text-zinc-600 dark:text-zinc-400 hidden md:block">
-                        {formatTime(currentTime)} / {formatTime(duration || 0)}
+                        {playbackTimeLabel} / {playbackDurationLabel}
                     </span>
 
                     {/* Playback Speed */}

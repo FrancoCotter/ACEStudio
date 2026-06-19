@@ -14,6 +14,12 @@ export function getAudioUrl(audioUrl: string | undefined | null, songId?: string
   return audioUrl;
 }
 
+export function getPlaybackUrl(songId: string | undefined | null, audioUrl: string | undefined | null): string | undefined {
+  if (!audioUrl) return undefined;
+  if (!songId) return getAudioUrl(audioUrl);
+  return `/api/songs/${encodeURIComponent(songId)}/audio`;
+}
+
 export function getCoverUrl(coverUrl: string | undefined | null, seed?: string): string | undefined {
   const sourceUrl = coverUrl || (seed ? `https://picsum.photos/seed/${encodeURIComponent(seed)}/400/400` : undefined);
   if (!sourceUrl) return undefined;
@@ -118,6 +124,7 @@ export interface Song {
   cover_url?: string;
   audio_url?: string;
   audioUrl?: string;
+  playbackUrl?: string;
   duration?: number;
   bpm?: number;
   key_scale?: string;
@@ -140,10 +147,12 @@ function transformSongs(songs: Song[]): Song[] {
   return songs.map(song => {
     const rawUrl = song.audio_url || song.audioUrl;
     const resolvedUrl = getAudioUrl(rawUrl, song.id);
+    const playbackUrl = getPlaybackUrl(song.id, rawUrl);
     return {
       ...song,
       audio_url: resolvedUrl,
       audioUrl: resolvedUrl,
+      playbackUrl,
       cover_url: getCoverUrl(song.cover_url, song.id),
       coverUrl: getCoverUrl(song.cover_url, song.id),
     };
@@ -194,6 +203,7 @@ export const songsApi = {
         ...result.song,
         audio_url: resolvedUrl,
         audioUrl: resolvedUrl,
+        playbackUrl: getPlaybackUrl(result.song.id, rawUrl),
         cover_url: resolvedCoverUrl,
         coverUrl: resolvedCoverUrl,
       },
@@ -211,6 +221,7 @@ export const songsApi = {
         ...result.song,
         audio_url: resolvedUrl,
         audioUrl: resolvedUrl,
+        playbackUrl: getPlaybackUrl(result.song.id, rawUrl),
         cover_url: resolvedCoverUrl,
         coverUrl: resolvedCoverUrl,
       },
@@ -241,6 +252,7 @@ export const songsApi = {
         tags: s.tags || [],
         audioUrl: resolvedUrl,
         audio_url: resolvedUrl,
+        playbackUrl: getPlaybackUrl(s.id, rawUrl),
         isPublic: s.is_public ?? s.isPublic,
         is_public: s.is_public ?? s.isPublic,
         likeCount: s.like_count || s.likeCount || 0,

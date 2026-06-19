@@ -4,6 +4,7 @@ import { X, Play, Pause, Download, Wand2, Image as ImageIcon, Music, Video, Load
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import { useResponsive } from '../context/ResponsiveContext';
+import { getSongAudioAssetUrl, getSongLyricsUrl } from '../utils/songPlayback';
 
 interface VideoGeneratorModalProps {
   isOpen: boolean;
@@ -793,9 +794,9 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({ isOpen
       return;
     }
     
-    if (song.audioUrl) {
+    const lrcUrl = getSongLyricsUrl(song);
+    if (lrcUrl) {
       // Attempt to load .lrc file next to the audio file
-      const lrcUrl = song.audioUrl.replace(/\.[^/.]+$/, '.lrc');
       console.log('[LyricsLoader] Attempting to fetch lyric file from:', lrcUrl);
       fetch(lrcUrl)
         .then(res => {
@@ -988,7 +989,7 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({ isOpen
     // Audio Setup
     const audio = new Audio();
     audio.crossOrigin = "anonymous";
-    audio.src = song.audioUrl || '';
+    audio.src = getSongAudioAssetUrl(song) || '';
     audioRef.current = audio;
 
     const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -1184,7 +1185,7 @@ export const VideoGeneratorModal: React.FC<VideoGeneratorModalProps> = ({ isOpen
 
     // Fetch and decode audio
     setExportProgress(2);
-    const audioUrl = song.audioUrl || '';
+    const audioUrl = getSongAudioAssetUrl(song) || '';
     const audioResponse = await fetch(audioUrl);
     const audioArrayBuffer = await audioResponse.arrayBuffer();
 

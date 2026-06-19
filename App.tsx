@@ -21,6 +21,7 @@ import { Toast, ToastType } from './components/Toast';
 import { SearchPage } from './components/SearchPage';
 import { TrainingPanel } from './components/TrainingPanel';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { getSongPlaybackUrl, hasSongPlaybackSource } from './utils/songPlayback';
 
 const VideoGeneratorModal = React.lazy(() =>
   import('./components/VideoGeneratorModal').then(module => ({ default: module.VideoGeneratorModal }))
@@ -119,6 +120,8 @@ function AppContent() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [isPlaybackBootstrapping, setIsPlaybackBootstrapping] = useState(false);
+  const [hasPlaybackPrimed, setHasPlaybackPrimed] = useState(false);
   const [volume, setVolume] = useState(() => {
     const stored = localStorage.getItem('volume');
     return stored ? parseFloat(stored) : 0.8;
@@ -178,6 +181,7 @@ function AppContent() {
   const rightSidebarCloseTimerRef = useRef<number | null>(null);
   const rightSidebarFrameRef = useRef<number | null>(null);
   const isLoadingMoreSongsRef = useRef(false);
+  const playbackPrimedRef = useRef(false);
 
   // Mobile Details Modal State
   const [showMobileDetails, setShowMobileDetails] = useState(false);
@@ -320,6 +324,7 @@ function AppContent() {
     createdAt: new Date(s.created_at || s.createdAt),
     tags: s.tags || [],
     audioUrl: getAudioUrl(s.audio_url || s.audioUrl, s.id),
+    playbackUrl: s.id && (s.audio_url || s.audioUrl) ? `/api/songs/${encodeURIComponent(s.id)}/audio` : undefined,
     isPublic: s.is_public ?? s.isPublic,
     likeCount: s.like_count ?? s.likeCount ?? 0,
     like_count: s.like_count ?? s.likeCount ?? 0,
@@ -673,7 +678,7 @@ function AppContent() {
       return;
     }
 
-    // Find next playable song (has audioUrl and not generating)
+    // Find next playable song
     const queueLen = queue.length;
     for (let i = 1; i <= queueLen; i++) {
       let nextIndex;
@@ -691,7 +696,7 @@ function AppContent() {
       }
 
       const candidate = queue[nextIndex];
-      if (candidate.audioUrl && !candidate.isGenerating) {
+      if (hasSongPlaybackSource(candidate) && !candidate.isGenerating) {
         setQueueIndex(nextIndex);
         setCurrentSong(candidate);
         setSelectedSong(candidate);
@@ -719,7 +724,7 @@ function AppContent() {
       return;
     }
 
-    // Find previous playable song (has audioUrl and not generating)
+    // Find previous playable song
     const queueLen = queue.length;
     for (let i = 1; i <= queueLen; i++) {
       let prevIndex;
@@ -737,7 +742,7 @@ function AppContent() {
       }
 
       const candidate = queue[prevIndex];
-      if (candidate.audioUrl && !candidate.isGenerating) {
+      if (hasSongPlaybackSource(candidate) && !candidate.isGenerating) {
         setQueueIndex(prevIndex);
         setCurrentSong(candidate);
         setSelectedSong(candidate);
@@ -766,7 +771,7 @@ function AppContent() {
         const rawIndex = currentIndex + offset * direction;
         if (repeatMode === 'none' && (rawIndex < 0 || rawIndex >= queue.length)) return;
         const candidate = queue[(rawIndex + queue.length) % queue.length];
-        if (candidate?.audioUrl && !candidate.isGenerating && candidate.coverUrl) {
+        if (candidate && hasSongPlaybackSource(candidate) && !candidate.isGenerating && candidate.coverUrl) {
           urls.add(candidate.coverUrl);
           return;
         }
@@ -803,7 +808,8 @@ function AppContent() {
 
     while (audioWarmupActiveRef.current < maxConcurrentWarmAudio && queue.length > 0) {
       const song = queue.shift();
-      if (!song?.audioUrl || song.isGenerating || cache.has(song.id)) {
+      const playbackUrl = getSongPlaybackUrl(song);
+      if (!playbackUrl || song?.isGenerating || cache.has(song.id)) {
         if (song?.id) queuedIds.delete(song.id);
         continue;
       }
@@ -814,7 +820,7 @@ function AppContent() {
       const warmAudio = new Audio();
       warmAudio.crossOrigin = 'anonymous';
       warmAudio.preload = 'metadata';
-      warmAudio.src = song.audioUrl;
+      warmAudio.src = playbackUrl;
       cache.set(song.id, warmAudio);
       trimCache();
 
@@ -852,7 +858,7 @@ function AppContent() {
   }, [processAudioWarmupQueue]);
 
   const warmupVisibleSongAudio = useCallback((song: Song) => {
-    if (!song.audioUrl || song.isGenerating) return;
+    if (!hasSongPlaybackSource(song) || song.isGenerating) return;
     if (preloadedSongIdRef.current === song.id) return;
     if (audioWarmupCacheRef.current.has(song.id)) return;
     if (audioWarmupQueuedIdsRef.current.has(song.id)) return;
@@ -870,6 +876,14 @@ function AppContent() {
     audio.preload = 'auto';
     audio.volume = volume;
 
+    const markPlaybackPrimed = () => {
+      if (!playbackPrimedRef.current) {
+        playbackPrimedRef.current = true;
+        setHasPlaybackPrimed(true);
+      }
+      setIsPlaybackBootstrapping(false);
+    };
+
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
     const applyPendingSeek = () => {
       if (pendingSeekRef.current === null) return;
@@ -884,11 +898,12 @@ function AppContent() {
     };
 
     const onLoadedMetadata = () => {
-      setDuration(audio.duration);
+      setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
       applyPendingSeek();
     };
 
     const onCanPlay = () => {
+      markPlaybackPrimed();
       applyPendingSeek();
     };
 
@@ -909,6 +924,7 @@ function AppContent() {
           showToast(t('unableToPlay'), 'error');
         }
       }
+      setIsPlaybackBootstrapping(false);
       setIsPlaying(false);
     };
 
@@ -944,20 +960,22 @@ function AppContent() {
     const audio = audioRef.current;
     if (!audio || currentSong || isPlaying) return;
 
-    const firstPlayableSong = songs.find(song => song.audioUrl && !song.isGenerating);
-    if (!firstPlayableSong?.audioUrl) return;
+    const firstPlayableSong = songs.find(song => hasSongPlaybackSource(song) && !song.isGenerating);
+    const playbackUrl = getSongPlaybackUrl(firstPlayableSong);
+    if (!firstPlayableSong || !playbackUrl) return;
     if (preloadedSongIdRef.current === firstPlayableSong.id) return;
 
     preloadedSongIdRef.current = firstPlayableSong.id;
     currentSongIdRef.current = firstPlayableSong.id;
-    audio.src = firstPlayableSong.audioUrl;
+    audio.src = playbackUrl;
     audio.load();
   }, [songs, currentSong, isPlaying]);
 
   // Handle Playback State
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !currentSong?.audioUrl) return;
+    const playbackUrl = getSongPlaybackUrl(currentSong);
+    if (!audio || !playbackUrl) return;
 
     const playAudio = async () => {
       try {
@@ -975,7 +993,7 @@ function AppContent() {
 
     if (currentSongIdRef.current !== currentSong.id) {
       currentSongIdRef.current = currentSong.id;
-      audio.src = currentSong.audioUrl;
+      audio.src = playbackUrl;
       audio.load();
       if (isPlaying) playAudio();
     } else {
@@ -1009,12 +1027,12 @@ function AppContent() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable) return;
       e.preventDefault();
       if (currentSong) {
-        if (currentSong.audioUrl) {
+        if (hasSongPlaybackSource(currentSong) && !(isPlaybackBootstrapping && !hasPlaybackPrimed)) {
           setIsPlaying(prev => !prev);
         }
       } else {
         // No song selected — play first available
-        const available = songs.filter(s => s.audioUrl && !s.isGenerating);
+        const available = songs.filter(s => hasSongPlaybackSource(s) && !s.isGenerating);
         if (available.length > 0) {
           playSong(available[0], available);
         }
@@ -1022,7 +1040,7 @@ function AppContent() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentSong, songs]);
+  }, [currentSong, songs, isPlaybackBootstrapping, hasPlaybackPrimed]);
 
   // Helper to cleanup a job and check if all jobs are done
   const cleanupJob = useCallback((jobId: string, tempId: string) => {
@@ -1368,7 +1386,10 @@ function AppContent() {
 
   const togglePlay = () => {
     if (!currentSong) return;
-    if (!currentSong.audioUrl) {
+    if (isPlaybackBootstrapping && !hasPlaybackPrimed) {
+      return;
+    }
+    if (!hasSongPlaybackSource(currentSong)) {
       showToast(t('songNotAvailable'), 'error');
       return;
     }
@@ -1376,7 +1397,7 @@ function AppContent() {
   };
 
   const playFirst = () => {
-    const available = songs.filter(s => s.audioUrl && !s.isGenerating);
+    const available = songs.filter(s => hasSongPlaybackSource(s) && !s.isGenerating);
     if (available.length > 0) {
       playSong(available[0], available);
     }
@@ -1391,11 +1412,18 @@ function AppContent() {
 
   const beginImmediatePlayback = (song: Song) => {
     const audio = audioRef.current;
-    if (!audio || !song.audioUrl) return;
+    const playbackUrl = getSongPlaybackUrl(song);
+    if (!audio || !playbackUrl) return;
 
-    if (currentSongIdRef.current !== song.id || audio.src !== new URL(song.audioUrl, window.location.href).href) {
+    setCurrentTime(0);
+    setDuration(0);
+    if (!playbackPrimedRef.current) {
+      setIsPlaybackBootstrapping(true);
+    }
+
+    if (currentSongIdRef.current !== song.id || audio.src !== new URL(playbackUrl, window.location.href).href) {
       currentSongIdRef.current = song.id;
-      audio.src = song.audioUrl;
+      audio.src = playbackUrl;
       audio.load();
     }
 
@@ -1411,6 +1439,11 @@ function AppContent() {
   };
 
   const playSong = (song: Song, list?: Song[]) => {
+    if (!hasSongPlaybackSource(song)) {
+      showToast(t('songNotAvailable'), 'error');
+      return;
+    }
+
     const nextQueue = list && list.length > 0
       ? list
       : (playQueue.length > 0 && playQueue.some(s => s.id === song.id))
@@ -1446,7 +1479,7 @@ function AppContent() {
   };
 
   const playSongAtTime = (song: Song, time: number) => {
-    if (!song.audioUrl) {
+    if (!hasSongPlaybackSource(song)) {
       showToast(t('songNotAvailable'), 'error');
       return;
     }
@@ -1956,6 +1989,7 @@ function AppContent() {
         onTogglePlay={togglePlay}
         currentTime={currentTime}
         duration={duration}
+        isPlaybackLoading={isPlaybackBootstrapping && !hasPlaybackPrimed}
         onSeek={handleSeek}
         onNext={playNext}
         onPrevious={playPrevious}

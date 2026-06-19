@@ -9,6 +9,7 @@ import { AlbumCover } from './AlbumCover';
 import { getAvatarUrl } from '../utils/avatar';
 import { getSongCaption, getSongTags } from '../utils/songMetadata';
 import { hasRenderableSyncedLyrics } from '../utils/syncedLyrics';
+import { getSongLyricsUrl, getSongPlaybackUrl } from '../utils/songPlayback';
 
 interface RightSidebarProps {
     song: Song | null;
@@ -155,12 +156,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
     }, [song?.id, song?.isGenerating]);
 
     useEffect(() => {
-        if (!song?.audioUrl || !generationHasSyncedLyrics) {
+        const lrcUrl = getSongLyricsUrl(song);
+        if (!lrcUrl || !generationHasSyncedLyrics) {
             setHasVerifiedDynamicLyrics(false);
             return;
         }
-
-        const lrcUrl = song.audioUrl.replace(/\.[^/.]+$/, '.lrc');
         const controller = new AbortController();
         setHasVerifiedDynamicLyrics(false);
 
@@ -182,7 +182,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
             });
 
         return () => controller.abort();
-    }, [song?.audioUrl, generationHasSyncedLyrics]);
+    }, [song?.id, song?.audioUrl, song?.playbackUrl, generationHasSyncedLyrics]);
 
     const formatElapsedTime = (start: Date): string => {
         const startMs = start.getTime();
@@ -534,9 +534,10 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                         <button
                             title={t('downloadAudio')}
                             onClick={async () => {
-                                if (!song.audioUrl) return;
+                                const playbackUrl = getSongPlaybackUrl(song);
+                                if (!playbackUrl) return;
                                 try {
-                                    const response = await fetch(song.audioUrl);
+                                    const response = await fetch(playbackUrl);
                                     const blob = await response.blob();
                                     const url = URL.createObjectURL(blob);
                                     const link = document.createElement('a');

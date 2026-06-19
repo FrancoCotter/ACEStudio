@@ -7,6 +7,7 @@ import { ArrowLeft, Heart, MoreHorizontal, ThumbsDown, Music as MusicIcon, Edit3
 import { SongDropdownMenu } from './SongDropdownMenu';
 import { getAvatarUrl } from '../utils/avatar';
 import { getSongCaption, getSongTags } from '../utils/songMetadata';
+import { getSongLyricsUrl } from '../utils/songPlayback';
 
 interface SongProfileProps {
     songId: string;
@@ -282,14 +283,14 @@ export const SongProfile: React.FC<SongProfileProps> = ({ songId, initialSong = 
     };
 
     useEffect(() => {
-        if (!song?.audioUrl || !shouldLoadSyncedLyrics) {
+        const lrcUrl = getSongLyricsUrl(song);
+        if (!lrcUrl || !shouldLoadSyncedLyrics) {
             setSyncedLyrics([]);
             setSyncedLyricsLoading(false);
             return;
         }
 
         let cancelled = false;
-        const lrcUrl = song.audioUrl.replace(/\.[^/.]+$/, '.lrc');
         setSyncedLyrics([]);
         setSyncedLyricsLoading(true);
 
@@ -312,7 +313,7 @@ export const SongProfile: React.FC<SongProfileProps> = ({ songId, initialSong = 
         return () => {
             cancelled = true;
         };
-    }, [song?.audioUrl, shouldLoadSyncedLyrics]);
+    }, [song?.id, song?.audioUrl, song?.playbackUrl, shouldLoadSyncedLyrics]);
 
     useEffect(() => {
         if (activeLyricIndex < 0) return;
