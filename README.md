@@ -132,7 +132,7 @@ If the backend does not detect a running Gradio API server, it automatically run
 To enable, start the official ACE-Step Gradio API server in the background (Default: `http://localhost:8001` with `--enable-api` flag).
 * **Benefits**:
   * **Warm Model (Rapid Generation)**: Checkpoints remain loaded in GPU memory. Consecutive generations start instantly (saving 15–20s of loading time per song).
-  * **Distributed Setup**: You can run the heavy ACE-Step Gradio server on a remote GPU server or a dedicated desktop in your LAN, and connect to it from a lightweight laptop.
+  * **Persistent Service Workflow**: Best when you want to keep ACE-Step resident on a dedicated machine and trigger many generations in a row without paying repeated Python cold-start costs.
 * **Drawbacks**:
   * **Static Progress**: The API call is synchronous. The progress bar in the UI will stay at `3%` (`Generating music via Gradio...`) and jump directly to `100%` when finished.
   * **Persistent VRAM Usage**: GPU memory remains occupied as long as the Gradio server is running.
