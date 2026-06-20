@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Song } from '../types';
-import { Play, Pause, SkipBack, SkipForward, Repeat, Shuffle, Star, Volume2, VolumeX, Maximize2, Repeat1, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Repeat, Shuffle, Star, Volume2, VolumeX, Expand, Shrink, Repeat1, ChevronUp, Loader2 } from 'lucide-react';
 import { useResponsive } from '../context/ResponsiveContext';
 import { useI18n } from '../context/I18nContext';
 import { AlbumCover } from './AlbumCover';
@@ -818,7 +818,7 @@ export const Player: React.FC<PlayerProps> = ({
     onAddToPlaylist,
     onDelete,
     onPlayFirst,
-    preloadCoverUrls = []
+    preloadCoverUrls = [],
 }) => {
     const { isMobile } = useResponsive();
     const { t } = useI18n();
@@ -946,6 +946,24 @@ export const Player: React.FC<PlayerProps> = ({
 
     // Show minimal player when no song is playing
     if (!currentSong) {
+        if (!isMobile) {
+            return (
+                <div className="h-20 lg:h-24 bg-white dark:bg-black/95 backdrop-blur border-t border-zinc-200 dark:border-white/10 flex items-center justify-center z-50 transition-colors duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] dark:shadow-none">
+                    <div className="flex h-full items-center justify-center px-4">
+                        <button
+                            onClick={() => onPlayFirst?.()}
+                            className="flex items-center gap-3 text-zinc-400 dark:text-zinc-600 hover:text-zinc-600 dark:hover:text-zinc-400 cursor-pointer transition-colors"
+                        >
+                            <div className="flex h-10 w-10 items-center justify-center rounded bg-zinc-200 dark:bg-zinc-800 lg:h-12 lg:w-12">
+                                <Play size={20} />
+                            </div>
+                            <span className="text-sm font-medium">{t('selectSongToPlay')}</span>
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
         return (
             <div className="h-20 lg:h-24 bg-white dark:bg-black/95 backdrop-blur border-t border-zinc-200 dark:border-white/10 flex items-center justify-center z-50 transition-colors duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] dark:shadow-none">
                 <button
@@ -1074,16 +1092,9 @@ export const Player: React.FC<PlayerProps> = ({
         if (isFullscreen) {
             return (
                 <div className="fixed inset-0 z-50 bg-gradient-to-b from-zinc-100 to-zinc-50 dark:from-zinc-900 dark:to-black flex flex-col safe-area-inset-top safe-area-inset-bottom transition-colors duration-300">
-                    {/* Header with close button */}
-                    <div className="flex items-center justify-between px-4 py-3">
-                        <button
-                            onClick={() => setIsFullscreen(false)}
-                            className="p-2 text-zinc-600 dark:text-white/70 tap-highlight-none"
-                        >
-                            <ChevronDown size={28} />
-                        </button>
+                    {/* Header */}
+                    <div className="flex items-center justify-center px-4 py-3">
                         <span className="text-xs text-zinc-500 dark:text-white/50 uppercase tracking-wider">{t('nowPlaying')}</span>
-                        <div className="w-11" />
                     </div>
 
                     {/* Album Art */}
@@ -1193,7 +1204,7 @@ export const Player: React.FC<PlayerProps> = ({
 
                     {/* Volume Control */}
                     <div className="px-6 py-4">
-                        <div className="mx-auto flex w-full max-w-[280px] items-center gap-3">
+                        <div className="mx-auto flex w-full max-w-[320px] items-center gap-3">
                             <button
                                 onClick={() => onVolumeChange(volume === 0 ? 0.8 : 0)}
                                 className="text-zinc-500 dark:text-white/60 tap-highlight-none"
@@ -1216,6 +1227,13 @@ export const Player: React.FC<PlayerProps> = ({
                                         : 'linear-gradient(to right, rgb(228 228 231) 0%, rgb(228 228 231) 100%)',
                                 }}
                             />
+                            <button
+                                onClick={() => setIsFullscreen(false)}
+                                className="flex-shrink-0 text-zinc-500 dark:text-white/60 tap-highlight-none"
+                                aria-label="Exit fullscreen"
+                            >
+                                <Shrink size={20} strokeWidth={2.2} />
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1324,16 +1342,9 @@ export const Player: React.FC<PlayerProps> = ({
                     seedKey={`${currentSong.id}:${currentSong.coverUrl || ''}:${currentSong.title}`}
                 />
 
-                {/* Header with close button */}
-                <div className="relative z-10 flex items-center justify-between px-6 py-4">
-                    <button
-                        onClick={() => setIsFullscreen(false)}
-                        className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors"
-                    >
-                        <ChevronDown size={28} />
-                    </button>
+                {/* Header */}
+                <div className="relative z-10 flex items-center justify-center px-6 py-4">
                     <span className="text-sm text-white/50 uppercase tracking-wider font-medium">{t('nowPlaying')}</span>
-                    <div className="w-11" />
                 </div>
 
                 {/* Main content area */}
@@ -1437,21 +1448,8 @@ export const Player: React.FC<PlayerProps> = ({
                 </div>
 
                 <div className="relative z-10 h-20 lg:h-24 shrink-0 border-t border-black/10 bg-white/62 backdrop-blur-xl dark:border-white/10 dark:bg-black/45">
-                    <div
-                        ref={fullscreenProgressRef}
-                        className="group relative h-1 lg:h-1.5 w-full cursor-pointer bg-black/10 dark:bg-white/15"
-                        onClick={(e) => handleSeekInteraction(e, fullscreenProgressRef)}
-                    >
-                        <div
-                            className="h-full bg-zinc-950 group-hover:bg-[#8fb68f] transition-colors dark:bg-white"
-                            style={{ width: `${progressPercent}%` }}
-                        >
-                            <div className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-zinc-950 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-white" style={{ left: `clamp(0px, calc(${progressPercent}% - 6px), calc(100% - 12px))` }} />
-                        </div>
-                    </div>
-
-                    <div className="flex h-[calc(100%-0.25rem)] w-full items-center justify-between gap-2 px-2 sm:px-4 lg:px-6 lg:h-[calc(100%-0.375rem)]">
-                        <div className="flex min-w-0 flex-1 max-w-[30%] lg:max-w-[33%] items-center gap-2 sm:gap-3">
+                    <div className="grid h-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-2 sm:gap-4 sm:px-4 lg:px-6">
+                        <div className="flex min-w-0 items-center gap-2 sm:gap-3 justify-self-start">
                             <div className="h-10 w-10 lg:h-12 lg:w-12 overflow-hidden rounded bg-black/10 flex-shrink-0 shadow-sm dark:bg-white/10">
                                 {currentSong.coverUrl ? (
                                     <img src={currentSong.coverUrl} className="h-full w-full object-cover" alt="cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
@@ -1488,7 +1486,7 @@ export const Player: React.FC<PlayerProps> = ({
                             </button>
                         </div>
 
-                        <div className="flex flex-shrink-0 flex-col items-center justify-center">
+                        <div className="flex flex-col items-center justify-center gap-2 self-center">
                             <div className="flex items-center gap-2 sm:gap-4 lg:gap-6">
                                 <button
                                     onClick={onToggleShuffle}
@@ -1529,12 +1527,30 @@ export const Player: React.FC<PlayerProps> = ({
                                     {repeatMode !== 'none' && <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-current rounded-full" />}
                                 </button>
                             </div>
+                            <div className="flex w-[420px] items-center justify-center gap-3 lg:w-[500px]">
+                                <span className="hidden w-10 flex-shrink-0 text-left font-mono text-[10px] text-zinc-600 dark:text-zinc-400 md:block sm:text-xs">
+                                    {playbackTimeLabel}
+                                </span>
+                                <div
+                                    ref={fullscreenProgressRef}
+                                    className="group relative h-1 flex-1 cursor-pointer rounded-full bg-black/10 dark:bg-white/15 lg:h-1.5"
+                                    onClick={(e) => handleSeekInteraction(e, fullscreenProgressRef)}
+                                >
+                                    <div
+                                        className="relative h-full rounded-full bg-zinc-950 group-hover:bg-[#8fb68f] transition-colors dark:bg-white"
+                                        style={{ width: `${progressPercent}%` }}
+                                    >
+                                        <div className="absolute right-0 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-zinc-950 dark:bg-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-hover:bg-[#8fb68f] -mr-2" />
+                                    </div>
+                                    <div className="absolute top-1/2 -z-10 h-4 w-full -translate-y-1/2"></div>
+                                </div>
+                                <span className="hidden w-10 flex-shrink-0 text-right font-mono text-[10px] text-zinc-600 dark:text-zinc-400 md:block sm:text-xs">
+                                    {playbackDurationLabel}
+                                </span>
+                            </div>
                         </div>
 
-                        <div className="flex min-w-0 flex-1 max-w-[30%] lg:max-w-[33%] items-center justify-end gap-2 sm:gap-3 text-zinc-500 dark:text-zinc-400">
-                            <span className="hidden text-right font-mono text-[10px] text-zinc-600 dark:text-zinc-400 md:block sm:text-xs">
-                                {playbackTimeLabel} / {playbackDurationLabel}
-                            </span>
+                        <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3 text-zinc-500 dark:text-zinc-400 justify-self-end">
                             <VolumeControl
                                 volume={volume}
                                 onVolumeChange={onVolumeChange}
@@ -1542,6 +1558,13 @@ export const Player: React.FC<PlayerProps> = ({
                                 buttonClassName="rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
                                 sliderWidthClassName="w-[104px]"
                             />
+                            <button
+                                onClick={() => setIsFullscreen(false)}
+                                className="rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10 lg:p-2"
+                                aria-label="Exit fullscreen"
+                            >
+                                <Shrink size={16} strokeWidth={2.2} />
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1550,113 +1573,114 @@ export const Player: React.FC<PlayerProps> = ({
     }
 
     return (
-        <div className="h-20 lg:h-24 bg-white dark:bg-black/95 backdrop-blur border-t border-zinc-200 dark:border-white/10 flex flex-col z-50 transition-colors duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] dark:shadow-none">
+        <div className="h-20 lg:h-24 bg-white dark:bg-black/95 backdrop-blur border-t border-zinc-200 dark:border-white/10 z-50 transition-colors duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] dark:shadow-none">
+            <div className="grid h-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-2 sm:gap-4 sm:px-4 lg:px-6">
 
-            {/* Progress Bar */}
-            <div
-                ref={progressBarRef}
-                className="w-full h-1 lg:h-1.5 bg-zinc-200 dark:bg-zinc-800 cursor-pointer group relative"
-                onClick={(e) => handleSeekInteraction(e, progressBarRef)}
-            >
-                <div
-                    className="h-full bg-zinc-900 dark:bg-white relative group-hover:bg-[#8fb68f] transition-colors"
-                    style={{ width: `${progressPercent}%` }}
-                >
-                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-zinc-900 dark:bg-white group-hover:bg-[#8fb68f] rounded-full shadow-lg -mr-2 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-                {/* Hit area for easier clicking */}
-                <div className="absolute top-1/2 -translate-y-1/2 w-full h-4 -z-10"></div>
-            </div>
-
-            <div className="flex-1 flex items-center justify-between px-2 sm:px-4 lg:px-6 gap-2 sm:gap-4">
-
-                {/* Song Info */}
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 max-w-[30%] lg:max-w-[33%]">
-                    <div className="w-10 h-10 lg:w-12 lg:h-12 rounded bg-zinc-200 dark:bg-zinc-800 overflow-hidden shadow-sm flex-shrink-0">
-                        {currentSong.coverUrl ? (
-                            <img src={currentSong.coverUrl} className="w-full h-full object-cover" alt="cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                        ) : null}
-                        {!currentSong.coverUrl && <AlbumCover seed={currentSong.id || currentSong.title} size="full" className="w-full h-full" />}
-                    </div>
-                    <div className="overflow-hidden min-w-0">
-                        <h4
-                            onClick={() => onNavigateToSong?.(currentSong.id)}
-                            className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white truncate cursor-pointer hover:underline"
-                        >
-                            {currentSong.title}
-                        </h4>
-                        <p
-                            onClick={() => currentSong.creator && onNavigateToProfile?.(currentSong.creator)}
-                            className={`text-[10px] sm:text-xs text-zinc-500 dark:text-zinc-400 truncate ${currentSong.creator ? 'hover:underline cursor-pointer' : ''}`}
-                        >
-                            {currentSong.creator || 'Unknown Artist'}
-                        </p>
-                    </div>
-                    <button
-                        onClick={onToggleLike}
-                        className={`ml-1 sm:ml-2 transition-colors flex-shrink-0 hidden sm:block ${isLiked ? 'text-[#6f8f72] dark:text-[#a8c9a4]' : 'text-zinc-400 hover:text-zinc-900 dark:hover:text-white'}`}
-                    >
-                        <Star size={18} fill={isLiked ? "currentColor" : "none"} />
-                    </button>
-                </div>
-
-                {/* Controls */}
-                <div className="flex flex-col items-center justify-center flex-shrink-0">
-                    <div className="flex items-center gap-2 sm:gap-4 lg:gap-6">
+                    {/* Song Info */}
+                    <div className="flex min-w-0 items-center gap-2 sm:gap-3 justify-self-start">
+                        <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-200 shadow-sm dark:bg-zinc-800 lg:h-12 lg:w-12">
+                            {currentSong.coverUrl ? (
+                                <img src={currentSong.coverUrl} className="h-full w-full object-cover" alt="cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                            ) : null}
+                            {!currentSong.coverUrl && <AlbumCover seed={currentSong.id || currentSong.title} size="full" className="h-full w-full" />}
+                        </div>
+                        <div className="min-w-0 overflow-hidden">
+                            <h4
+                                onClick={() => onNavigateToSong?.(currentSong.id)}
+                                className="truncate text-xs font-bold text-zinc-900 hover:underline cursor-pointer dark:text-white sm:text-sm"
+                            >
+                                {currentSong.title}
+                            </h4>
+                            <p
+                                onClick={() => currentSong.creator && onNavigateToProfile?.(currentSong.creator)}
+                                className={`truncate text-[10px] text-zinc-500 dark:text-zinc-400 sm:text-xs ${currentSong.creator ? 'hover:underline cursor-pointer' : ''}`}
+                            >
+                                {currentSong.creator || 'Unknown Artist'}
+                            </p>
+                        </div>
                         <button
-                            onClick={onToggleShuffle}
-                            className={`transition-colors hidden sm:block ${isShuffle ? 'text-[#6f8f72] dark:text-[#a8c9a4]' : 'text-zinc-400 hover:text-zinc-900 dark:hover:text-white'}`}
+                            onClick={onToggleLike}
+                            className={`ml-1 hidden flex-shrink-0 transition-colors sm:block sm:ml-2 ${isLiked ? 'text-[#6f8f72] dark:text-[#a8c9a4]' : 'text-zinc-400 hover:text-zinc-900 dark:hover:text-white'}`}
                         >
-                            <Shuffle size={16} />
-                        </button>
-                        <button
-                            onClick={onPrevious}
-                            className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors"
-                        >
-                            <SkipBack size={18} className="sm:w-[22px] sm:h-[22px]" fill="currentColor" />
-                        </button>
-                        <button
-                            onClick={onTogglePlay}
-                            disabled={isPlaybackLoading}
-                            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-transform shadow-lg ${isPlaybackLoading ? '' : 'hover:scale-105'} ${playbackButtonClassName}`}
-                        >
-                            {renderPlaybackGlyph(18, 18, 'sm:w-5 sm:h-5 ml-0.5')}
-                        </button>
-                        <button
-                            onClick={onNext}
-                            className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors"
-                        >
-                            <SkipForward size={18} className="sm:w-[22px] sm:h-[22px]" fill="currentColor" />
-                        </button>
-                        <button
-                            onClick={onToggleRepeat}
-                            className={`transition-colors hidden sm:block ${repeatMode !== 'none' ? 'text-[#6f8f72] dark:text-[#a8c9a4]' : 'text-zinc-400 hover:text-zinc-900 dark:hover:text-white'} relative`}
-                        >
-                            {repeatMode === 'one' ? <Repeat1 size={16} /> : <Repeat size={16} />}
-                            {repeatMode !== 'none' && <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-current rounded-full"></div>}
+                            <Star size={18} fill={isLiked ? "currentColor" : "none"} />
                         </button>
                     </div>
-                </div>
 
-                {/* Volume & Fullscreen */}
-                <div className="flex items-center justify-end gap-2 sm:gap-3 min-w-0 flex-1 max-w-[30%] lg:max-w-[33%] text-zinc-500 dark:text-zinc-400">
-                    <span className="text-[10px] sm:text-xs font-mono text-right text-zinc-600 dark:text-zinc-400 hidden md:block">
-                        {playbackTimeLabel} / {playbackDurationLabel}
-                    </span>
-                    <VolumeControl
-                        volume={volume}
-                        onVolumeChange={onVolumeChange}
-                        wrapperClassName="hidden items-center md:flex"
-                        buttonClassName="p-1.5 lg:p-2 hover:bg-zinc-100 dark:hover:bg-white/10 rounded-full transition-colors"
-                        sliderWidthClassName="w-[108px]"
-                    />
-                    <button
-                        onClick={() => setIsFullscreen(true)}
-                        className="p-1.5 lg:p-2 hover:bg-zinc-100 dark:hover:bg-white/10 rounded-full transition-colors"
-                    >
-                        <Maximize2 size={16} />
-                    </button>
-                </div>
+                    {/* Center Module */}
+                    <div className="flex flex-col items-center justify-center gap-2 self-center">
+                        <div className="flex items-center gap-2 sm:gap-4 lg:gap-6">
+                            <button
+                                onClick={onToggleShuffle}
+                                className={`hidden transition-colors sm:block ${isShuffle ? 'text-[#6f8f72] dark:text-[#a8c9a4]' : 'text-zinc-400 hover:text-zinc-900 dark:hover:text-white'}`}
+                            >
+                                <Shuffle size={16} />
+                            </button>
+                            <button
+                                onClick={onPrevious}
+                                className="text-zinc-700 dark:text-zinc-300 transition-colors hover:text-black dark:hover:text-white"
+                            >
+                                <SkipBack size={18} className="sm:h-[22px] sm:w-[22px]" fill="currentColor" />
+                            </button>
+                            <button
+                                onClick={onTogglePlay}
+                                disabled={isPlaybackLoading}
+                                className={`flex h-9 w-9 items-center justify-center rounded-full transition-transform shadow-lg sm:h-10 sm:w-10 ${isPlaybackLoading ? '' : 'hover:scale-105'} ${playbackButtonClassName}`}
+                            >
+                                {renderPlaybackGlyph(18, 18, 'sm:w-5 sm:h-5 ml-0.5')}
+                            </button>
+                            <button
+                                onClick={onNext}
+                                className="text-zinc-700 dark:text-zinc-300 transition-colors hover:text-black dark:hover:text-white"
+                            >
+                                <SkipForward size={18} className="sm:h-[22px] sm:w-[22px]" fill="currentColor" />
+                            </button>
+                            <button
+                                onClick={onToggleRepeat}
+                                className={`relative hidden transition-colors sm:block ${repeatMode !== 'none' ? 'text-[#6f8f72] dark:text-[#a8c9a4]' : 'text-zinc-400 hover:text-zinc-900 dark:hover:text-white'}`}
+                            >
+                                {repeatMode === 'one' ? <Repeat1 size={16} /> : <Repeat size={16} />}
+                                {repeatMode !== 'none' && <div className="absolute -bottom-1.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-current"></div>}
+                            </button>
+                        </div>
+                        <div className="flex w-[420px] items-center justify-center gap-3 lg:w-[500px]">
+                            <span className="hidden w-10 flex-shrink-0 text-left font-mono text-[10px] text-zinc-600 dark:text-zinc-400 md:block sm:text-xs">
+                                {playbackTimeLabel}
+                            </span>
+                            <div
+                                ref={progressBarRef}
+                                className="group relative h-1 flex-1 cursor-pointer rounded-full bg-zinc-200/85 dark:bg-zinc-800/85 lg:h-1.5"
+                                onClick={(e) => handleSeekInteraction(e, progressBarRef)}
+                            >
+                                <div
+                                    className="relative h-full rounded-full bg-zinc-900 dark:bg-white transition-colors group-hover:bg-[#8fb68f]"
+                                    style={{ width: `${progressPercent}%` }}
+                                >
+                                    <div className="absolute right-0 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-zinc-900 dark:bg-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-hover:bg-[#8fb68f] -mr-2" />
+                                </div>
+                                <div className="absolute top-1/2 -z-10 h-4 w-full -translate-y-1/2"></div>
+                            </div>
+                            <span className="hidden w-10 flex-shrink-0 text-right font-mono text-[10px] text-zinc-600 dark:text-zinc-400 md:block sm:text-xs">
+                                {playbackDurationLabel}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Volume & Fullscreen */}
+                    <div className="flex min-w-0 items-center justify-end gap-2 text-zinc-500 dark:text-zinc-400 sm:gap-3 justify-self-end">
+                        <VolumeControl
+                            volume={volume}
+                            onVolumeChange={onVolumeChange}
+                            wrapperClassName="hidden items-center md:flex"
+                            buttonClassName="rounded-full p-1.5 transition-colors hover:bg-zinc-100/80 dark:hover:bg-white/10 lg:p-2"
+                            sliderWidthClassName="w-[108px]"
+                        />
+                        <button
+                            onClick={() => setIsFullscreen(true)}
+                            className="rounded-full p-1.5 transition-colors hover:bg-zinc-100/80 dark:hover:bg-white/10 lg:p-2"
+                        >
+                            <Expand size={16} strokeWidth={2.2} />
+                        </button>
+                    </div>
             </div>
         </div>
     );
