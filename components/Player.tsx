@@ -1,12 +1,10 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Song } from '../types';
-import { Play, Pause, SkipBack, SkipForward, Repeat, Shuffle, Download, Star, MoreVertical, Volume2, VolumeX, Maximize2, Repeat1, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { Play, Pause, SkipBack, SkipForward, Repeat, Shuffle, Star, Volume2, VolumeX, Maximize2, Repeat1, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { useResponsive } from '../context/ResponsiveContext';
 import { useI18n } from '../context/I18nContext';
-import { SongDropdownMenu } from './SongDropdownMenu';
 import { AlbumCover } from './AlbumCover';
-import { getSongLyricsUrl, getSongPlaybackUrl } from '../utils/songPlayback';
+import { getSongLyricsUrl } from '../utils/songPlayback';
 
 type CoverPalette = {
     average: string;
@@ -60,6 +58,15 @@ interface PlayerProps {
     onDelete?: () => void;
     onPlayFirst?: () => void;
     preloadCoverUrls?: string[];
+}
+
+interface VolumeControlProps {
+    volume: number;
+    onVolumeChange: (val: number) => void;
+    wrapperClassName: string;
+    buttonClassName: string;
+    sliderWidthClassName?: string;
+    iconSize?: number;
 }
 
 const loadedFullscreenCoverUrls = new Set<string>();
@@ -573,6 +580,110 @@ const LiquidCoverBackground: React.FC<{
     );
 };
 
+const VolumeControl: React.FC<VolumeControlProps> = ({
+    volume,
+    onVolumeChange,
+    wrapperClassName,
+    buttonClassName,
+    sliderWidthClassName = 'w-[108px]',
+    iconSize = 18,
+}) => {
+    const sliderRef = useRef<HTMLDivElement>(null);
+    const [isHovered, setIsHovered] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
+    const [previewVolume, setPreviewVolume] = useState<number | null>(null);
+
+    const clampVolume = (nextVolume: number) => Math.max(0, Math.min(1, nextVolume));
+    const getVolumeFromClientX = (clientX: number) => {
+        const rect = sliderRef.current?.getBoundingClientRect();
+        if (!rect) return volume;
+        return clampVolume((clientX - rect.left) / Math.max(rect.width, 1));
+    };
+
+    const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        const nextVolume = getVolumeFromClientX(event.clientX);
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setIsDragging(true);
+        setIsHovered(true);
+        setPreviewVolume(nextVolume);
+        onVolumeChange(nextVolume);
+    };
+
+    const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+        const nextVolume = getVolumeFromClientX(event.clientX);
+        if (isDragging) {
+            onVolumeChange(nextVolume);
+        }
+        setPreviewVolume(nextVolume);
+    };
+
+    const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+        setIsDragging(false);
+    };
+
+    const handleMouseLeave = () => {
+        if (isDragging) return;
+        setIsHovered(false);
+        setPreviewVolume(null);
+    };
+
+    const effectivePreviewVolume = previewVolume ?? volume;
+    const committedPercent = Math.max(0, Math.min(100, volume * 100));
+    const previewPercent = Math.max(0, Math.min(100, effectivePreviewVolume * 100));
+    const committedWidth = `${committedPercent}%`;
+    const previewSpan = Math.max(0, previewPercent - committedPercent);
+    const previewVisible = isHovered && previewVolume !== null && !isDragging && previewPercent > committedPercent && previewSpan > 0.2;
+    const thumbVisible = isHovered || isDragging;
+
+    return (
+        <div
+            className={wrapperClassName}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={handleMouseLeave}
+        >
+            <button
+                onClick={() => onVolumeChange(volume === 0 ? 0.8 : 0)}
+                className={buttonClassName}
+                aria-label={volume === 0 ? 'Unmute' : 'Mute'}
+            >
+                {volume === 0 ? <VolumeX size={iconSize} /> : <Volume2 size={iconSize} />}
+            </button>
+            <div
+                ref={sliderRef}
+                className={`relative flex h-5 items-center ${sliderWidthClassName} cursor-pointer`}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={() => {
+                    setIsDragging(false);
+                    setPreviewVolume(null);
+                }}
+            >
+                <div className="absolute left-0 right-0 h-1 rounded-full bg-white/30 dark:bg-white/25" />
+                <div
+                    className="absolute left-0 h-1 rounded-full bg-[#8fb68f]"
+                    style={{ width: committedWidth }}
+                />
+                <div
+                    className={`absolute h-1 rounded-full bg-white ${previewVisible ? 'opacity-100' : 'opacity-0'}`}
+                    style={{
+                        left: `${committedPercent}%`,
+                        width: `${previewSpan}%`,
+                    }}
+                />
+                <div
+                    className={`absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow-[0_0_0_1px_rgba(255,255,255,0.96)] transition-opacity duration-150 ${thumbVisible ? 'opacity-100' : 'opacity-0'}`}
+                    style={{ left: `clamp(0px, calc(${committedWidth} - 6px), calc(100% - 12px))` }}
+                />
+            </div>
+        </div>
+    );
+};
+
 function cleanLyricText(text: string): string {
     return text
         .split('\n')
@@ -709,7 +820,6 @@ export const Player: React.FC<PlayerProps> = ({
     onPlayFirst,
     preloadCoverUrls = []
 }) => {
-    const { user } = useAuth();
     const { isMobile } = useResponsive();
     const { t } = useI18n();
     const progressBarRef = useRef<HTMLDivElement>(null);
@@ -717,12 +827,7 @@ export const Player: React.FC<PlayerProps> = ({
     const fullscreenLyricsRef = useRef<HTMLDivElement>(null);
     const lyricsBrowseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastTouchY = useRef<number | null>(null);
-    const [isHoveringVolume, setIsHoveringVolume] = useState(false);
-    const volumeHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const [showDropdown, setShowDropdown] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
-    const [showSpeedMenu, setShowSpeedMenu] = useState(false);
-    const speedMenuRef = useRef<HTMLDivElement>(null);
     const [syncedLyrics, setSyncedLyrics] = useState<SyncedLyricLine[]>([]);
     const [syncedLyricsLoading, setSyncedLyricsLoading] = useState(false);
     const [coverPalette, setCoverPalette] = useState<CoverPalette>(DEFAULT_COVER_PALETTE);
@@ -838,17 +943,6 @@ export const Player: React.FC<PlayerProps> = ({
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isFullscreen]);
-
-    // Close speed menu when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (speedMenuRef.current && !speedMenuRef.current.contains(event.target as Node)) {
-                setShowSpeedMenu(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
 
     // Show minimal player when no song is playing
     if (!currentSong) {
@@ -976,25 +1070,6 @@ export const Player: React.FC<PlayerProps> = ({
             : <Play size={playSize} fill="currentColor" className={playClassName} />;
     };
 
-    const handleDownload = async () => {
-        const playbackUrl = getSongPlaybackUrl(currentSong);
-        if (!playbackUrl) return;
-        try {
-            const response = await fetch(playbackUrl);
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `${currentSong.title || 'song'}.mp3`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        } catch (error) {
-            console.error('Download failed:', error);
-        }
-    };
-
     if (isMobile) {
         if (isFullscreen) {
             return (
@@ -1116,9 +1191,16 @@ export const Player: React.FC<PlayerProps> = ({
                         </button>
                     </div>
 
-                    {/* Volume Control - Vertical */}
-                    <div className="flex flex-col items-center gap-3 px-6 py-4">
-                        <div className="relative h-32 w-8 flex items-center justify-center">
+                    {/* Volume Control */}
+                    <div className="px-6 py-4">
+                        <div className="mx-auto flex w-full max-w-[280px] items-center gap-3">
+                            <button
+                                onClick={() => onVolumeChange(volume === 0 ? 0.8 : 0)}
+                                className="text-zinc-500 dark:text-white/60 tap-highlight-none"
+                                aria-label={volume === 0 ? 'Unmute' : 'Mute'}
+                            >
+                                {volume === 0 ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                            </button>
                             <input
                                 type="range"
                                 min="0"
@@ -1126,59 +1208,16 @@ export const Player: React.FC<PlayerProps> = ({
                                 step="0.01"
                                 value={volume}
                                 onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-                                className="w-32 h-8 -rotate-90 origin-center appearance-none bg-transparent cursor-pointer"
+                                className="h-1.5 w-full appearance-none rounded-full bg-transparent cursor-pointer"
                                 style={{
                                     WebkitAppearance: 'none',
-                                    background: `linear-gradient(to right, rgb(143 182 143) 0%, rgb(143 182 143) ${volume * 100}%, rgb(228 228 231) ${volume * 100}%, rgb(228 228 231) 100%)`
+                                    background: volume > 0
+                                        ? `linear-gradient(to right, rgb(143 182 143) 0%, rgb(143 182 143) ${Math.round(volume * 100)}%, rgb(228 228 231) ${Math.round(volume * 100)}%, rgb(228 228 231) 100%)`
+                                        : 'linear-gradient(to right, rgb(228 228 231) 0%, rgb(228 228 231) 100%)',
                                 }}
                             />
                         </div>
-                        <button
-                            onClick={() => onVolumeChange(volume === 0 ? 0.8 : 0)}
-                            className="text-zinc-400 dark:text-white/50 tap-highlight-none"
-                        >
-                            {volume === 0 ? <VolumeX size={20} /> : <Volume2 size={20} />}
-                        </button>
                     </div>
-
-                    {/* Extra Actions */}
-                    <div className="flex items-center justify-center gap-6 px-6 pb-6 text-zinc-400 dark:text-white/50">
-                        {onOpenVideo && (
-                            <button onClick={onOpenVideo} className="p-3 tap-highlight-none">
-                                <Maximize2 size={20} />
-                            </button>
-                        )}
-                        <button
-                            onClick={handleDownload}
-                            className="p-3 tap-highlight-none"
-                            title={t('downloadAudio')}
-                        >
-                            <Download size={20} />
-                        </button>
-                        <button
-                            onClick={() => setShowDropdown(!showDropdown)}
-                            className="p-3 tap-highlight-none relative"
-                        >
-                            <MoreVertical size={20} />
-                        </button>
-                    </div>
-
-                    {showDropdown && (
-                        <div className="absolute bottom-24 left-1/2 -translate-x-1/2">
-                            <SongDropdownMenu
-                                song={currentSong}
-                                isOpen={showDropdown}
-                                onClose={() => setShowDropdown(false)}
-                                isOwner={user?.id === currentSong.userId}
-                                position="center"
-                                direction="up"
-                                onCreateVideo={onOpenVideo}
-                                onReusePrompt={onReusePrompt}
-                                onAddToPlaylist={onAddToPlaylist}
-                                onDelete={onDelete}
-                            />
-                        </div>
-                    )}
                 </div>
             );
         }
@@ -1492,107 +1531,17 @@ export const Player: React.FC<PlayerProps> = ({
                             </div>
                         </div>
 
-                        <div className="flex min-w-0 flex-1 max-w-[30%] lg:max-w-[33%] items-center justify-end gap-1 sm:gap-2 lg:gap-3 text-zinc-500 dark:text-zinc-400">
+                        <div className="flex min-w-0 flex-1 max-w-[30%] lg:max-w-[33%] items-center justify-end gap-2 sm:gap-3 text-zinc-500 dark:text-zinc-400">
                             <span className="hidden text-right font-mono text-[10px] text-zinc-600 dark:text-zinc-400 md:block sm:text-xs">
                                 {playbackTimeLabel} / {playbackDurationLabel}
                             </span>
-                            <div className="relative hidden lg:block" ref={speedMenuRef}>
-                                <button
-                                    className="px-2 py-1 text-[11px] font-mono font-bold hover:bg-black/5 rounded transition-colors min-w-[42px] text-center dark:hover:bg-white/10"
-                                    onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                                >
-                                    {playbackRate}x
-                                </button>
-                                {showSpeedMenu && (
-                                    <div className="absolute bottom-full right-0 mb-2 bg-white rounded-lg shadow-xl border border-zinc-200 py-1 min-w-[80px] z-50 dark:bg-zinc-900 dark:border-white/10">
-                                        {[0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((rate) => (
-                                            <button
-                                                key={rate}
-                                                onClick={() => {
-                                                    onPlaybackRateChange(rate);
-                                                    setShowSpeedMenu(false);
-                                                }}
-                                                className={`w-full px-3 py-1.5 text-left text-xs font-mono hover:bg-zinc-100 transition-colors dark:hover:bg-white/10 ${
-                                                    playbackRate === rate ? 'text-[#6f8f72] dark:text-[#a8c9a4] font-bold' : 'text-zinc-600 dark:text-zinc-300'
-                                                }`}
-                                            >
-                                                {rate === 1.0 ? t('normalSpeed') : `${rate}x`}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                            <div
-                                className="relative hidden md:block"
-                                onMouseEnter={() => {
-                                    if (volumeHideTimer.current) clearTimeout(volumeHideTimer.current);
-                                    setIsHoveringVolume(true);
-                                }}
-                                onMouseLeave={() => {
-                                    volumeHideTimer.current = setTimeout(() => setIsHoveringVolume(false), 400);
-                                }}
-                            >
-                                <button
-                                    onClick={() => onVolumeChange(volume === 0 ? 0.8 : 0)}
-                                    className="p-1.5 lg:p-2 hover:bg-black/5 rounded-full transition-colors dark:hover:bg-white/10"
-                                >
-                                    {volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                                </button>
-
-                                {isHoveringVolume && (
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 pb-2">
-                                        <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-white/10 p-2">
-                                            <div className="relative h-24 w-8 flex items-center justify-center">
-                                                <input
-                                                    type="range"
-                                                    min="0"
-                                                    max="1"
-                                                    step="0.01"
-                                                    value={volume}
-                                                    onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-                                                    className="w-24 h-8 -rotate-90 origin-center appearance-none bg-transparent cursor-pointer"
-                                                    style={{
-                                                        WebkitAppearance: 'none',
-                                                        background: `linear-gradient(to right, rgb(143 182 143) 0%, rgb(143 182 143) ${volume * 100}%, rgb(228 228 231) ${volume * 100}%, rgb(228 228 231) 100%)`
-                                                    }}
-                                                />
-                                            </div>
-                                            <div className="text-[10px] text-center font-mono text-zinc-600 dark:text-zinc-400 mt-1">
-                                                {Math.round(volume * 100)}%
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                            <button
-                                onClick={handleDownload}
-                                className="hidden p-1.5 lg:block lg:p-2 hover:bg-black/5 rounded-full transition-colors dark:hover:bg-white/10"
-                                title={t('downloadAudio')}
-                            >
-                                <Download size={18} />
-                            </button>
-                            <div className="relative hidden sm:block">
-                                <button
-                                    onClick={() => setShowDropdown(!showDropdown)}
-                                    className="p-1.5 lg:p-2 hover:bg-black/5 rounded-full transition-colors dark:hover:bg-white/10"
-                                >
-                                    <MoreVertical size={18} />
-                                </button>
-                                {showDropdown && (
-                                    <SongDropdownMenu
-                                        song={currentSong}
-                                        isOpen={showDropdown}
-                                        onClose={() => setShowDropdown(false)}
-                                        isOwner={user?.id === currentSong.userId}
-                                        position="right"
-                                        direction="up"
-                                        onCreateVideo={onOpenVideo}
-                                        onReusePrompt={onReusePrompt}
-                                        onAddToPlaylist={onAddToPlaylist}
-                                        onDelete={onDelete}
-                                    />
-                                )}
-                            </div>
+                            <VolumeControl
+                                volume={volume}
+                                onVolumeChange={onVolumeChange}
+                                wrapperClassName="hidden items-center md:flex"
+                                buttonClassName="rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                                sliderWidthClassName="w-[104px]"
+                            />
                         </div>
                     </div>
                 </div>
@@ -1689,118 +1638,24 @@ export const Player: React.FC<PlayerProps> = ({
                     </div>
                 </div>
 
-                {/* Volume & Extras */}
-                <div className="flex items-center justify-end gap-1 sm:gap-2 lg:gap-3 min-w-0 flex-1 max-w-[30%] lg:max-w-[33%] text-zinc-500 dark:text-zinc-400">
+                {/* Volume & Fullscreen */}
+                <div className="flex items-center justify-end gap-2 sm:gap-3 min-w-0 flex-1 max-w-[30%] lg:max-w-[33%] text-zinc-500 dark:text-zinc-400">
                     <span className="text-[10px] sm:text-xs font-mono text-right text-zinc-600 dark:text-zinc-400 hidden md:block">
                         {playbackTimeLabel} / {playbackDurationLabel}
                     </span>
-
-                    {/* Playback Speed */}
-                    <div className="relative group hidden lg:block" ref={speedMenuRef}>
-                        <button
-                            className="px-2 py-1 text-[11px] font-mono font-bold hover:bg-zinc-200 dark:hover:bg-white/10 rounded transition-colors min-w-[42px] text-center"
-                            onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                        >
-                            {playbackRate}x
-                        </button>
-                        {showSpeedMenu && (
-                            <div className="absolute bottom-full right-0 mb-2 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-white/10 py-1 min-w-[80px] z-50">
-                                {[0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((rate) => (
-                                    <button
-                                        key={rate}
-                                        onClick={() => {
-                                            onPlaybackRateChange(rate);
-                                            setShowSpeedMenu(false);
-                                        }}
-                                        className={`w-full px-3 py-1.5 text-left text-xs font-mono hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors ${
-                                            playbackRate === rate ? 'text-[#6f8f72] dark:text-[#a8c9a4] font-bold' : 'text-zinc-700 dark:text-zinc-300'
-                                        }`}
-                                    >
-                                        {rate === 1.0 ? t('normalSpeed') : `${rate}x`}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Volume Control with Vertical Slider */}
-                    <div
-                        className="relative group hidden md:block"
-                        onMouseEnter={() => {
-                            if (volumeHideTimer.current) clearTimeout(volumeHideTimer.current);
-                            setIsHoveringVolume(true);
-                        }}
-                        onMouseLeave={() => {
-                            volumeHideTimer.current = setTimeout(() => setIsHoveringVolume(false), 400);
-                        }}
-                    >
-                        <button
-                            onClick={() => onVolumeChange(volume === 0 ? 0.8 : 0)}
-                            className="p-1.5 lg:p-2 hover:bg-zinc-100 dark:hover:bg-white/10 rounded-full transition-colors"
-                        >
-                            {volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                        </button>
-
-                        {/* Vertical Volume Slider */}
-                        {isHoveringVolume && (
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 pb-2">
-                                <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-white/10 p-2">
-                                    <div className="relative h-24 w-8 flex items-center justify-center">
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="1"
-                                            step="0.01"
-                                            value={volume}
-                                            onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-                                            className="w-24 h-8 -rotate-90 origin-center appearance-none bg-transparent cursor-pointer"
-                                            style={{
-                                                WebkitAppearance: 'none',
-                                                background: `linear-gradient(to right, rgb(143 182 143) 0%, rgb(143 182 143) ${volume * 100}%, rgb(228 228 231) ${volume * 100}%, rgb(228 228 231) 100%)`
-                                            }}
-                                        />
-                                    </div>
-                                    <div className="text-[10px] text-center font-mono text-zinc-600 dark:text-zinc-400 mt-1">
-                                        {Math.round(volume * 100)}%
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <button
-                        onClick={handleDownload}
-                        className="p-1.5 lg:p-2 hover:bg-zinc-100 dark:hover:bg-white/10 rounded-full transition-colors hidden lg:block"
-                        title={t('downloadAudio')}
-                    >
-                        <Download size={18} />
-                    </button>
+                    <VolumeControl
+                        volume={volume}
+                        onVolumeChange={onVolumeChange}
+                        wrapperClassName="hidden items-center md:flex"
+                        buttonClassName="p-1.5 lg:p-2 hover:bg-zinc-100 dark:hover:bg-white/10 rounded-full transition-colors"
+                        sliderWidthClassName="w-[108px]"
+                    />
                     <button
                         onClick={() => setIsFullscreen(true)}
                         className="p-1.5 lg:p-2 hover:bg-zinc-100 dark:hover:bg-white/10 rounded-full transition-colors"
                     >
                         <Maximize2 size={16} />
                     </button>
-                    <div className="relative hidden sm:block">
-                        <button
-                            onClick={() => setShowDropdown(!showDropdown)}
-                            className="p-1.5 lg:p-2 hover:bg-zinc-100 dark:hover:bg-white/10 rounded-full transition-colors"
-                        >
-                            <MoreVertical size={18} />
-                        </button>
-                        <SongDropdownMenu
-                            song={currentSong}
-                            isOpen={showDropdown}
-                            onClose={() => setShowDropdown(false)}
-                            isOwner={user?.id === currentSong.userId}
-                            position="right"
-                            direction="up"
-                            onCreateVideo={onOpenVideo}
-                            onReusePrompt={onReusePrompt}
-                            onAddToPlaylist={onAddToPlaylist}
-                            onDelete={onDelete}
-                        />
-                    </div>
                 </div>
             </div>
         </div>
