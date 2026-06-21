@@ -8,6 +8,7 @@ import { AlbumCover } from './AlbumCover';
 import { GeneratingIndicator } from './GeneratingIndicator';
 import { songsApi } from '../services/api';
 import { getAvatarUrl } from '../utils/avatar';
+import { getGeneratingSongTitle, getGenerationStageText, getModelDisplayName, getSongModelId } from '../utils/generationDisplay';
 import { getSongCaption, getSongTags } from '../utils/songMetadata';
 import { hasRenderableSyncedLyrics } from '../utils/syncedLyrics';
 
@@ -47,28 +48,6 @@ interface SongListProps {
 
 // Define Filter Types
 type FilterType = 'liked' | 'public' | 'private' | 'generating';
-
-// Map model ID to short display name
-const getModelDisplayName = (modelId?: string): string => {
-    if (!modelId) return 'ACE';
-    
-    const mapping: Record<string, string> = {
-        'acestep-v15-base': '1.5B',
-        'acestep-v15-sft': '1.5S',
-        'acestep-v15-turbo-shift1': '1.5TS1',
-        'acestep-v15-turbo-shift3': '1.5TS3',
-        'acestep-v15-turbo-continuous': '1.5TC',
-        'acestep-v15-turbo': '1.5T',
-        'acestep-v15-xl-base': '1.5XL-B',
-        'acestep-v15-xl-turbo': '1.5XL-T',
-        'acestep-v15-xl-sft': '1.5XL-S',
-    };
-    return mapping[modelId] || modelId.replace(/^acestep-/, '').replace(/^v/, '').toUpperCase();
-};
-
-const getSongModelId = (song: Song): string | undefined => {
-    return song.ditModel || song.generationParams?.ditModel || song.generationParams?.dit_model;
-};
 
 const getExplicitDynamicLyricsFlag = (song: Song): boolean | undefined => {
     const record = song as Song & Record<string, unknown>;
@@ -194,10 +173,10 @@ const formatElapsedTime = (start: Date, now: number): string => {
     return `${minutes}:${String(seconds).padStart(2, '0')}`;
 };
 
-const getGenerationStatusText = (song: Song, now: number): string => {
-    if (song.queuePosition) return `Queued #${song.queuePosition}`;
-    const stage = song.stage?.trim() || 'Creating audio';
-    return `${stage} · ${formatElapsedTime(song.createdAt, now)}`;
+const getGenerationStatusText = (song: Song, now: number, t: ReturnType<typeof useI18n>['t']): string => {
+    if (song.queuePosition) return t('queuedStatus').replace('{position}', String(song.queuePosition));
+    const stage = getGenerationStageText(song, t);
+    return `${stage} - ${formatElapsedTime(song.createdAt, now)}`;
 };
 
 const createDragPreview = (element: HTMLElement) => {
@@ -647,6 +626,7 @@ const SongItem: React.FC<SongItemProps> = ({
     onAudioWarmup
 }) => {
     const { token } = useAuth();
+    const { t } = useI18n();
     const hasMeasuredProgress = typeof song.progress === 'number' && song.progress > 0;
     const [showDropdown, setShowDropdown] = useState(false);
     const [scoreModalOpen, setScoreModalOpen] = useState(false);
@@ -842,7 +822,7 @@ const SongItem: React.FC<SongItemProps> = ({
                     <h3
                         className={`min-w-0 font-bold text-lg truncate ${isCurrent ? 'text-[#6f8f72] dark:text-[#a8c9a4]' : 'text-zinc-900 dark:text-white'}`}
                     >
-                        {song.title || (song.isGenerating ? (song.queuePosition ? "Queued..." : "Creating...") : "Untitled")}
+                        {getGeneratingSongTitle(song, t)}
                     </h3>
                     <span
                         className="inline-flex shrink-0 items-center justify-center text-[9px] font-bold text-[#16301f] bg-[#8fbc8f] border border-[#a7cda6] px-1.5 py-0.5 rounded-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]"
@@ -885,7 +865,7 @@ const SongItem: React.FC<SongItemProps> = ({
                     <div className="pt-2 max-w-2xl">
                         <div className="flex items-center justify-between gap-3 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1">
                             <span className="truncate">
-                                {getGenerationStatusText(song, now)}
+                                {getGenerationStatusText(song, now, t)}
                             </span>
                             {hasMeasuredProgress && (
                                 <span className="font-mono text-zinc-400 dark:text-zinc-500 flex-shrink-0">

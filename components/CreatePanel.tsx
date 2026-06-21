@@ -178,6 +178,11 @@ type CustomExampleSnapshot = {
   style: string;
 };
 
+type SimpleExampleSnapshot = {
+  description: string;
+  instrumental: boolean;
+};
+
 const selectClassName = "w-full bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 rounded-xl px-2 py-1.5 text-xs text-zinc-900 dark:text-white focus:outline-none focus:border-[#8fb68f] dark:focus:border-[#8fb68f] transition-colors cursor-pointer [&>option]:bg-white [&>option]:dark:bg-zinc-800 [&>option]:text-zinc-900 [&>option]:dark:text-white disabled:opacity-60 disabled:cursor-not-allowed";
 const checkboxClassName = "h-4 w-4 shrink-0 self-start mt-0.5 rounded border-zinc-300 dark:border-white/20 bg-white dark:bg-black/20 text-[#8fb68f] accent-[#8fb68f] focus:ring-2 focus:ring-[#8fb68f]/35 focus:ring-offset-0 cursor-pointer";
 
@@ -228,6 +233,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
   const [style, setStyle] = useState(() => initialDraft.style || '');
   const [title, setTitle] = useState(() => initialDraft.title || '');
   const [customExampleSnapshot, setCustomExampleSnapshot] = useState<CustomExampleSnapshot | null>(null);
+  const [simpleExampleSnapshot, setSimpleExampleSnapshot] = useState<SimpleExampleSnapshot | null>(null);
 
   // Common
   const [instrumental, setInstrumental] = useState(() => initialDraft.instrumental ?? false);
@@ -658,31 +664,58 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
   // Reuse Effect - must be after all state declarations
   useEffect(() => {
     if (initialData) {
-      const params = (initialData.song.generationParams || {}) as Record<string, any>;
-      const reusedModel = initialData.song.ditModel || params.ditModel || params.dit_model;
+      const { song } = initialData;
+      const params = (song.generationParams || {}) as Record<string, any>;
+      const reusedModel = song.ditModel || params.ditModel || params.dit_model;
       const reusedTaskType = params.taskType || params.task_type;
-      const nextLyrics = normalizeLyricsInput(initialData.song.lyrics);
-      const nextStyle = initialData.song.style || params.style || params.caption || '';
+      const reusedDuration =
+        typeof song.durationSeconds === 'number'
+          ? song.durationSeconds
+          : typeof params.duration === 'number'
+            ? params.duration
+            : undefined;
+      const reusedBpm =
+        typeof song.bpm === 'number'
+          ? song.bpm
+          : typeof params.bpm === 'number'
+            ? params.bpm
+            : undefined;
+      const reusedKeyScale =
+        typeof song.key_scale === 'string' && song.key_scale
+          ? song.key_scale
+          : typeof params.keyScale === 'string' && params.keyScale
+            ? params.keyScale
+            : typeof params.key_scale === 'string' && params.key_scale
+              ? params.key_scale
+              : undefined;
+      const reusedTimeSignature =
+        typeof song.time_signature === 'string' && song.time_signature
+          ? song.time_signature
+          : typeof params.timeSignature === 'string' && params.timeSignature
+            ? params.timeSignature
+            : typeof params.time_signature === 'string' && params.time_signature
+              ? params.time_signature
+              : undefined;
+      const nextLyrics = normalizeLyricsInput(song.lyrics);
+      const nextStyle = song.style || params.style || params.caption || '';
       const reusedInstrumental =
         typeof params.instrumental === 'boolean'
           ? params.instrumental
-          : initialData.song.lyrics.length === 0;
+          : song.lyrics.length === 0;
 
       setCustomMode(true);
       setLyrics(nextLyrics);
       setStyle(nextStyle);
-      setTitle(initialData.song.title);
+      setTitle(song.title);
       setInstrumental(reusedInstrumental);
       setThinking(Boolean(params.thinking));
       setGetLrc(Boolean(params.getLrc ?? params.get_lrc));
       setEnhance(Boolean(params.enhance));
 
-      if (typeof params.duration === 'number') setDuration(params.duration);
-      if (typeof params.bpm === 'number') setBpm(params.bpm);
-      if (typeof params.keyScale === 'string') setKeyScale(params.keyScale);
-      else if (typeof params.key_scale === 'string') setKeyScale(params.key_scale);
-      if (typeof params.timeSignature === 'string') setTimeSignature(params.timeSignature);
-      else if (typeof params.time_signature === 'string') setTimeSignature(params.time_signature);
+      if (typeof reusedDuration === 'number') setDuration(reusedDuration);
+      if (typeof reusedBpm === 'number') setBpm(reusedBpm);
+      if (typeof reusedKeyScale === 'string') setKeyScale(reusedKeyScale);
+      if (typeof reusedTimeSignature === 'string') setTimeSignature(reusedTimeSignature);
 
       if (typeof params.guidanceScale === 'number') setGuidanceScale(params.guidanceScale);
       else if (typeof params.guidance_scale === 'number') setGuidanceScale(params.guidance_scale);
@@ -761,11 +794,10 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
           || params.reference_audio_url
           || params.sourceAudioUrl
           || params.source_audio_url
-          || params.bpm
-          || params.keyScale
-          || params.key_scale
-          || params.timeSignature
-          || params.time_signature
+          || reusedBpm
+          || reusedKeyScale
+          || reusedTimeSignature
+          || reusedDuration
         )
       );
       setCustomExampleSnapshot({ lyrics: nextLyrics, style: nextStyle });
@@ -1028,8 +1060,11 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
       const result = await generateApi.getRandomDescription(token, mode);
 
       if (mode === 'simple') {
-        setSongDescription(result.description || result.caption || '');
-        setInstrumental(result.instrumental);
+        const nextDescription = result.description || result.caption || '';
+        const nextInstrumental = Boolean(result.instrumental);
+        setSongDescription(nextDescription);
+        setInstrumental(nextInstrumental);
+        setSimpleExampleSnapshot({ description: nextDescription, instrumental: nextInstrumental });
         setBpm(0);
         setDuration(-1);
         setKeyScale('');
@@ -1044,6 +1079,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
         setInstrumental(!(result.lyrics || '').trim());
         setThinking(Boolean(result.think));
         setCustomExampleSnapshot({ lyrics: nextLyrics, style: nextStyle });
+        setSimpleExampleSnapshot(null);
       }
 
       setVocalLanguage(result.vocalLanguage || 'unknown');
@@ -1087,6 +1123,19 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
   const handleStyleChange = (value: string) => {
     setStyle(value);
     detachCustomExampleIfContentChanged(lyrics, value);
+  };
+
+  const handleSongDescriptionChange = (value: string) => {
+    setSongDescription(value);
+
+    if (simpleExampleSnapshot && value !== simpleExampleSnapshot.description) {
+      // Random simple examples may intentionally mark a prompt as instrumental.
+      // When the user starts writing their own brief prompt, default back to vocal mode.
+      if (simpleExampleSnapshot.instrumental && instrumental) {
+        setInstrumental(false);
+      }
+      setSimpleExampleSnapshot(null);
+    }
   };
 
   const switchToSimpleMode = () => {
@@ -1396,7 +1445,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
     })();
     const submissionLyrics = customMode ? normalizedLyrics : '';
     const submissionStyle = customMode ? styleWithGender : '';
-    const submissionInstrumental = customMode ? instrumental : true;
+    const submissionInstrumental = instrumental;
 
     // Bulk generation: loop bulkCount times
     for (let i = 0; i < bulkCount; i++) {
@@ -1554,13 +1603,8 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
         {/* Header - Mode Toggle & Model Selection */}
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
           <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
-            <div className="flex h-4 items-end gap-0.5" aria-hidden="true">
-              {/* <span className="w-0.5 h-2 rounded-full bg-[#8fbc8f]" />
-              <span className="w-0.5 h-3.5 rounded-full bg-[#8fbc8f]" />
-              <span className="w-0.5 h-2.5 rounded-full bg-[#8fbc8f]" />
-              <span className="w-0.5 h-4 rounded-full bg-[#8fbc8f]" /> */}
-            </div>
-            <span className="hidden sm:inline text-xs font-semibold tracking-wide">Create Center</span>
+           
+            <span className="hidden sm:inline text-xs font-semilight tracking-wide">{t('createcenter')}</span>
           </div>
 
           <div className="justify-self-center">
@@ -1580,7 +1624,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
               </button>
             </div>
 
-            {/* Model Selection (DiT模型选择) */}
+            {/* Model Selection */}
           </div>
 
           <div className="justify-self-end">
@@ -1651,7 +1695,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
           </div>
           
         </div>
-        {/* VAE Selection (VAE模型选择) */}
+        {/* VAE Selection*/}
         <div className='flex item-center justify-between'>
           <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide px-1">VAE Select</label>
           <div className="relative" ref={vaeMenuRef}>
@@ -1717,7 +1761,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                     type="button"
                     onClick={() => handleLoadRandomExample('simple')}
                     disabled={isLoadingRandomExample}
-                    title="Load random description"
+                    title={t('loadRandomDescription')}
                     className="p-1 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-white/10 transition-colors"
                   >
                     {isLoadingRandomExample ? <Loader2 size={14} className="animate-spin" /> : <Dices size={14} />}
@@ -1725,7 +1769,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                   <button
                     type="button"
                     onClick={() => setSongDescription('')}
-                    title="Clear description"
+                    title={t('clearDescription')}
                     className="p-1 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-white/10 transition-colors"
                   >
                     <Trash2 size={14} />
@@ -1734,7 +1778,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
               </div>
               <textarea
                 value={songDescription}
-                onChange={(e) => setSongDescription(e.target.value)}
+                onChange={(e) => handleSongDescriptionChange(e.target.value)}
                 placeholder={t('songDescriptionPlaceholder')}
                 className="w-full h-32 bg-transparent p-3 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none resize-none"
               />
@@ -1801,14 +1845,14 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
 
               {/* BPM */}
               <EditableSlider
-                label="BPM"
+                label={t('bpm')}
                 value={bpm}
                 min={0}
                 max={300}
                 step={5}
                 onChange={setBpm}
-                formatDisplay={(val) => val === 0 ? 'Auto' : val.toString()}
-                autoLabel="Auto"
+                formatDisplay={(val) => val === 0 ? t('auto') : val.toString()}
+                autoLabel={t('auto')}
               />
 
               {/* Key & Time Signature */}
@@ -1820,7 +1864,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                     onChange={(e) => setKeyScale(e.target.value)}
                     className={selectClassName}
                   >
-                    <option value="">Auto</option>
+                    <option value="">{t('auto')}</option>
                     {KEY_SIGNATURES.filter(k => k).map(key => (
                       <option key={key} value={key}>{key}</option>
                     ))}
@@ -1833,7 +1877,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                     onChange={(e) => setTimeSignature(e.target.value)}
                     className={selectClassName}
                   >
-                    <option value="">Auto</option>
+                    <option value="">{t('auto')}</option>
                     {TIME_SIGNATURES.filter(t => t).map(time => (
                       <option key={time} value={time}>{time}</option>
                     ))}
@@ -1962,7 +2006,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                       </button>
                     </div>
                     <p className="px-1 text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-                      Uses this track as a style and timbre reference. The melody is not copied directly.
+                      {t('referenceAudioHelp')}
                     </p>
                   </div>
                 )}
@@ -2020,7 +2064,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                     </button>
                   </div>
                     <p className="px-1 text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-                      Cover mode is active. The source audio sets the structure and duration; strength controls how closely it is followed.
+                      {t('coverAudioHelp')}
                     </p>
                   </div>
                 )}
@@ -2068,7 +2112,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     className={`p-1.5 hover:bg-zinc-200 dark:hover:bg-white/10 rounded transition-colors ${isLoadingRandomExample ? 'text-[#8fb68f]' : 'text-zinc-500 hover:text-black dark:hover:text-white'}`}
-                    title="Load random text-to-music example"
+                    title={t('loadRandomTextToMusicExample')}
                     onClick={() => handleLoadRandomExample('custom')}
                     disabled={isLoadingRandomExample || isFormattingLyrics}
                   >
@@ -2086,7 +2130,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                   </button>
                   <button
                     className={`p-1.5 hover:bg-zinc-200 dark:hover:bg-white/10 rounded transition-colors ${isFormattingLyrics ? 'text-[#8fb68f]' : 'text-zinc-500 hover:text-black dark:hover:text-white'}`}
-                    title="AI Format - Enhance style & auto-fill parameters"
+                    title={t('aiFormatEnhanceTooltip')}
                     onClick={() => handleFormat('lyrics')}
                     disabled={isFormattingLyrics || !style.trim()}
                   >
@@ -2104,7 +2148,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                 disabled={instrumental || isFormattingLyrics}
                 value={lyrics}
                 onChange={(e) => handleLyricsChange(e.target.value)}
-                placeholder={instrumental ? t('instrumental') + ' mode' : t('lyricsPlaceholder')}
+                placeholder={instrumental ? t('instrumentalModePlaceholder') : t('lyricsPlaceholder')}
                 className={`w-full bg-transparent p-3 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none resize-none font-mono leading-relaxed ${instrumental ? 'opacity-30 cursor-not-allowed' : ''} ${isFormattingLyrics ? 'cursor-not-allowed' : ''}`}
                 style={{ height: `${lyricsHeight}px` }}
               />
@@ -2137,7 +2181,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                       title={t('enhanceTooltip')}
                     >
                       <Sparkles size={9} />
-                      <span>{enhance ? 'ON' : 'OFF'}</span>
+                      <span>{enhance ? t('on') : t('off')}</span>
                     </button>
                   </div>
                   <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">{t('genreMoodInstruments')}</p>
@@ -2160,7 +2204,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                   </button>
                   <button
                     className={`p-1.5 hover:bg-zinc-200 dark:hover:bg-white/10 rounded transition-colors ${isFormattingStyle ? 'text-[#8fb68f]' : 'text-zinc-500 hover:text-black dark:hover:text-white'}`}
-                    title="AI Format - Enhance style & auto-fill parameters"
+                    title={t('aiFormatEnhanceTooltip')}
                     onClick={() => handleFormat('style')}
                     disabled={isFormattingStyle || !style.trim()}
                   >
@@ -2468,7 +2512,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
               step={1}
               onChange={setBatchSize}
               helpText={t('numberOfVariations')}
-              title="Creates multiple variations in a single run. More variations = longer total time."
+              title={t('multipleVariationsTooltip')}
             />
 
             {/* Bulk Generate */}
@@ -2506,7 +2550,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
               step={1}
               onChange={setInferenceSteps}
               helpText={t('moreStepsBetterQuality')}
-              title="More steps usually improves quality but slows generation."
+              title={t('inferenceStepsTooltip')}
             />
 
             {/* Guidance Scale */}
@@ -2519,7 +2563,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
               onChange={setGuidanceScale}
               formatDisplay={(val) => val.toFixed(1)}
               helpText={t('howCloselyFollowPrompt')}
-              title="How strongly the model follows the prompt. Higher = stricter, lower = freer."
+              title={t('guidanceScaleTooltip')}
             />
             {/* DCW Settings Section */}
             <div className="grid space-y-1.5">
@@ -2527,8 +2571,8 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                
               </h4> */}
               <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="Enable Dual Conditioning Wavelet guidance.">
-                    DCW Settings
+                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('enableDcwTooltip')}>
+                    {t('dcwSettings')}
                   </span>
                   <button
                     type="button"
@@ -2540,7 +2584,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
               </div>
               {!dcwEnabled && shouldDefaultDcwOff(selectedModel) && (
                 <p className="text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-500">
-                  DCW is off by default for base/SFT models to avoid noisy generations.
+                  {t('dcwDefaultOffHint')}
                 </p>
               )}
               
@@ -2551,9 +2595,9 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                       <div className="space-y-1">
                         <label
                           className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400"
-                          title="Wavelet family used by DCW. Haar is fast and stable; DB/Sym/Coif variants can sound slightly smoother or different, but may be less predictable."
+                          title={t('dcwWaveletTooltip')}
                         >
-                          DCW Wavelet Base
+                          {t('dcwWaveletBase')}
                         </label>
                         <select
                           value={dcwWavelet}
@@ -2573,20 +2617,20 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                       <div className="space-y-1">
                           <label
                             className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 "
-                            title="Which frequency bands DCW emphasizes. Low = low-frequency structure, High = high-frequency detail, Double = both, Pix = pixel-style wavelet behavior, None = disable DCW mode."
+                            title={t('dcwModeTooltip')}
                           >
-                            DCW Mode
+                            {t('dcwMode')}
                           </label>
                           <select
                             value={dcwMode}
                             onChange={(e) => setDcwMode(e.target.value)}
                             className={selectClassName}
                           >
-                            <option value="low">Low</option>
-                            <option value="double">Double</option>
-                            <option value="high">High</option>
-                            <option value="pix">Pix</option>
-                            <option value="none">None</option>
+                            <option value="low">{t('dcwModeLow')}</option>
+                            <option value="double">{t('dcwModeDouble')}</option>
+                            <option value="high">{t('dcwModeHigh')}</option>
+                            <option value="pix">{t('dcwModePix')}</option>
+                            <option value="none">{t('none')}</option>
                           </select>
                       </div>
                     </div>
@@ -2596,9 +2640,9 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                     <div className="flex justify-between items-center text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
                       <span
                         className=""
-                        title="Overall DCW strength. Higher values can make conditioning stronger, but too high may cause artifacts or reduce naturalness. Small values are usually safer."
+                        title={t('dcwScalerTooltip')}
                       >
-                        DCW Scaler
+                        {t('dcwScaler')}
                       </span>
                       <span>{dcwScaler}</span>
                     </div>
@@ -2617,9 +2661,9 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                     <div className="flex justify-between items-center text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
                       <span
                         className=""
-                        title="Extra strength for high-frequency DCW detail. Higher values can add brightness/detail, but too much may create harshness, noise, or unstable texture."
+                        title={t('dcwHighScalerTooltip')}
                       >
-                        DCW High Scaler
+                        {t('dcwHighScaler')}
                       </span>
                       <span>{dcwHighScaler}</span>
                     </div>
@@ -2651,7 +2695,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="Deterministic is more repeatable; stochastic adds randomness.">{t('inferMethod')}</label>
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('inferMethodTooltip')}>{t('inferMethod')}</label>
                 <select
                   value={inferMethod}
                   onChange={(e) => setInferMethod(e.target.value as 'ode' | 'sde')}
@@ -2701,7 +2745,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Dices size={14} className="text-zinc-500" />
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="Fixing the seed makes results repeatable. Random is recommended for variety.">{t('seed')}</span>
+                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('seedTooltip')}>{t('seed')}</span>
                 </div>
                 <button
                   onClick={() => setRandomSeed(!randomSeed)}
@@ -2726,7 +2770,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
 
             {/* Thinking Toggle */}
             <div className="flex items-center justify-between py-2 border-t border-zinc-100 dark:border-white/5">
-              <span className={`text-xs font-medium ${loraLoaded ? 'text-zinc-400 dark:text-zinc-600' : 'text-zinc-600 dark:text-zinc-400'}`} title="Lets the lyric model reason about structure and metadata. Slightly slower.">{t('thinkingCot')}</span>
+              <span className={`text-xs font-medium ${loraLoaded ? 'text-zinc-400 dark:text-zinc-600' : 'text-zinc-600 dark:text-zinc-400'}`} title={t('thinkingCotTooltip')}>{t('thinkingCot')}</span>
               <button
                 onClick={() => !loraLoaded && setThinking(!thinking)}
                 disabled={loraLoaded}
@@ -2766,7 +2810,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
               <div className="flex items-center gap-2">
                 <Music2 size={16} className="text-zinc-500" />
                 <div className="flex flex-col items-start">
-                  <span title="Controls the 5Hz lyric/caption model sampling behavior.">{t('lmParameters')}</span>
+                  <span title={t('lmParametersTooltip')}>{t('lmParameters')}</span>
                   <span className="text-[11px] text-zinc-400 dark:text-zinc-500 font-normal">{t('controlLyricGeneration')}</span>
                 </div>
               </div>
@@ -2826,7 +2870,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
 
                 {/* LM Negative Prompt */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="Words or ideas to steer the lyric model away from.">{t('lmNegativePrompt')}</label>
+                  <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('lmNegativePromptTooltip')}>{t('lmNegativePrompt')}</label>
                   <textarea
                     value={lmNegativePrompt}
                     onChange={(e) => setLmNegativePrompt(e.target.value)}
@@ -2839,11 +2883,11 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
             )}
 
             <div className="space-y-1">
-              <h4 className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide" title="Controls how much the output follows the input audio.">{t('transform')}</h4>
+              <h4 className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide" title={t('transformTooltip')}>{t('transform')}</h4>
               <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t('controlSourceAudio')}</p>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="Advanced: precomputed audio codes for conditioning.">{t('audioCodes')}</label>
+              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('audioCodesTooltip')}>{t('audioCodes')}</label>
               <textarea
                 value={audioCodes}
                 onChange={(e) => setAudioCodes(e.target.value)}
@@ -2881,7 +2925,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="Choose text-to-music or audio-based modes.">{t('taskType')}</label>
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('taskTypeTooltip')}>{t('taskType')}</label>
                 <select
                   value={taskType}
                   onChange={(e) => setTaskType(e.target.value)}
@@ -2894,7 +2938,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="How strongly the source audio shapes the result.">{t('audioCoverStrength')}</label>
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('audioCoverStrengthTooltip')}>{t('audioCoverStrength')}</label>
                 <input
                   type="number"
                   step="0.01"
@@ -2909,7 +2953,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="Start time for the region to repaint (seconds).">{t('repaintingStart')}</label>
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('repaintingStartTooltip')}>{t('repaintingStart')}</label>
                 <input
                   type="number"
                   step="0.1"
@@ -2919,7 +2963,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="End time for the region to repaint (seconds).">{t('repaintingEnd')}</label>
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('repaintingEndTooltip')}>{t('repaintingEnd')}</label>
                 <input
                   type="number"
                   step="0.1"
@@ -2931,7 +2975,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="Additional directives to guide generation.">{t('instruction')}</label>
+              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('instructionTooltip')}>{t('instruction')}</label>
               <textarea
                 value={instruction}
                 onChange={(e) => setInstruction(e.target.value)}
@@ -2945,7 +2989,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="Fraction of the diffusion process to start applying guidance.">{t('cfgIntervalStart')}</label>
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('cfgIntervalStartTooltip')}>{t('cfgIntervalStart')}</label>
                 <input
                   type="number"
                   step="0.01"
@@ -2971,7 +3015,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="Override the default timestep schedule (advanced).">{t('customTimesteps')}</label>
+              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('customTimestepsTooltip')}>{t('customTimesteps')}</label>
               <input
                 type="text"
                 value={customTimesteps}
@@ -2995,7 +3039,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title="Bigger chunks can be faster but use more memory.">{t('lmBatchChunkSize')}</label>
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" title={t('lmBatchChunkSizeTooltip')}>{t('lmBatchChunkSize')}</label>
                 <input
                   type="number"
                   min="1"

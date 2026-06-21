@@ -22,6 +22,7 @@ import { SearchPage } from './components/SearchPage';
 import { TrainingPanel } from './components/TrainingPanel';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { getSongPlaybackUrl, hasSongPlaybackSource } from './utils/songPlayback';
+import { getGenerationStageKey } from './utils/generationDisplay';
 
 const VideoGeneratorModal = React.lazy(() =>
   import('./components/VideoGeneratorModal').then(module => ({ default: module.VideoGeneratorModal }))
@@ -319,6 +320,10 @@ function AppContent() {
     lyrics: s.lyrics || '',
     style: s.style || '',
     caption: s.caption,
+    bpm: s.bpm,
+    key_scale: s.key_scale || s.keyScale,
+    time_signature: s.time_signature || s.timeSignature,
+    durationSeconds: typeof s.duration === 'number' ? s.duration : undefined,
     coverUrl: getCoverUrl(s.cover_url || s.coverUrl, s.id) || '',
     duration: s.duration && s.duration > 0 ? `${Math.floor(s.duration / 60)}:${String(Math.floor(s.duration % 60)).padStart(2, '0')}` : '0:00',
     createdAt: new Date(s.created_at || s.createdAt),
@@ -338,6 +343,7 @@ function AppContent() {
     queuePosition: s.queuePosition,
     progress: s.progress,
     stage: s.stage,
+    stageKey: s.stageKey || getGenerationStageKey(s.stage) || undefined,
     generationParams: (() => {
       try {
         if (!s.generation_params && !s.generationParams) return undefined;
@@ -1133,13 +1139,19 @@ function AppContent() {
           if (!song) return prev;
           const newProgress = normalizedProgress ?? song.progress;
           const newStage = status.stage ?? song.stage;
+          const newStageKey = getGenerationStageKey(status.stage);
           // Skip update if nothing changed to avoid unnecessary re-renders
-          if (newProgress === song.progress && newStage === song.stage && newQueuePos === song.queuePosition) {
+          if (
+            newProgress === song.progress &&
+            newStage === song.stage &&
+            newStageKey === song.stageKey &&
+            newQueuePos === song.queuePosition
+          ) {
             return prev;
           }
           return prev.map(s => {
             if (s.id !== tempId) return s;
-            return { ...s, queuePosition: newQueuePos, progress: newProgress, stage: newStage };
+            return { ...s, queuePosition: newQueuePos, progress: newProgress, stage: newStage, stageKey: newStageKey ?? undefined };
           });
         });
 
@@ -1147,10 +1159,16 @@ function AppContent() {
           if (current?.id !== tempId) return current;
           const newProgress = normalizedProgress ?? current.progress;
           const newStage = status.stage ?? current.stage;
-          if (newProgress === current.progress && newStage === current.stage && newQueuePos === current.queuePosition) {
+          const newStageKey = getGenerationStageKey(status.stage);
+          if (
+            newProgress === current.progress &&
+            newStage === current.stage &&
+            newStageKey === current.stageKey &&
+            newQueuePos === current.queuePosition
+          ) {
             return current;
           }
-          return { ...current, queuePosition: newQueuePos, progress: newProgress, stage: newStage };
+          return { ...current, queuePosition: newQueuePos, progress: newProgress, stage: newStage, stageKey: newStageKey ?? undefined };
         });
 
         if (status.status === 'succeeded' && status.result) {
@@ -1163,7 +1181,7 @@ function AppContent() {
         } else if (status.status === 'failed') {
           cleanupJob(jobId, tempId);
           console.error(`Job ${jobId} failed:`, status.error);
-          showToast(`${t('generationFailed')}: ${status.error || 'Unknown error'}`, 'error');
+          showToast(`${t('generationFailed')}: ${status.error || t('unknownError')}`, 'error');
         }
       } catch (pollError) {
         console.error(`Polling error for job ${jobId}:`, pollError);
@@ -1183,17 +1201,24 @@ function AppContent() {
     }, GENERATION_TIMEOUT_MS);
   }, [token, cleanupJob, refreshSongsList]);
 
-  const buildTempSongFromParams = (params: GenerationParams, tempId: string, createdAt?: Date): Song => ({
+  const buildTempSongFromParams = (
+    params: GenerationParams,
+    tempId: string,
+    createdAt?: Date,
+    generationState?: Partial<Pick<Song, 'progress' | 'stage' | 'stageKey' | 'queuePosition'>>,
+  ): Song => ({
     id: tempId,
-    title: params.title || 'Generating...',
+    title: '',
     lyrics: '',
     style: params.style || params.songDescription || '',
     coverUrl: getCoverUrl(undefined, 'generating'),
     duration: '--:--',
     createdAt: createdAt ?? new Date(),
     isGenerating: true,
-    progress: 0.02,
-    stage: 'Queued',
+    progress: generationState?.progress ?? 0.02,
+    stage: generationState?.stage,
+    stageKey: generationState?.stageKey ?? 'queuedStage',
+    queuePosition: generationState?.queuePosition,
     tags: params.customMode ? ['custom'] : ['simple'],
     isPublic: true,
     userId: user?.id,
@@ -1214,15 +1239,16 @@ function AppContent() {
     setCurrentView('create');
     setMobileShowList(false);
 
-    const initialGenerationStage = !params.customMode
-      ? (params.instrumental ? 'Creating arrangement sample...' : 'Creating lyrics sample...')
-      : 'Submitting job...';
+    const usesSimpleLmPlanning = !params.customMode && !params.instrumental;
+    const initialGenerationStageKey = usesSimpleLmPlanning
+      ? 'creatingLyricsSample'
+      : 'submittingJob';
 
     // Create unique temp ID for this job
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const tempSong: Song = {
       id: tempId,
-      title: params.title || 'Generating...',
+      title: '',
       lyrics: '',
       style: params.style,
       coverUrl: getCoverUrl(undefined, 'generating'),
@@ -1230,7 +1256,7 @@ function AppContent() {
       createdAt: new Date(),
       isGenerating: true,
       progress: 0.02,
-      stage: initialGenerationStage,
+      stageKey: initialGenerationStageKey,
       tags: params.customMode ? ['custom'] : ['simple'],
       isPublic: true,
       userId: user?.id,
@@ -1245,16 +1271,14 @@ function AppContent() {
     openRightSidebar();
 
     const preflightStageTimers: ReturnType<typeof setTimeout>[] = [];
-    if (!params.customMode) {
+    if (usesSimpleLmPlanning) {
       preflightStageTimers.push(setTimeout(() => {
         setSongs(prev => prev.map(song =>
           song.id === tempId && song.isGenerating && !song.queuePosition
             ? {
                 ...song,
                 progress: Math.max(song.progress ?? 0, 0.05),
-                stage: params.instrumental
-                  ? 'Refining arrangement and metadata...'
-                  : 'Refining lyrics and metadata...',
+                stageKey: 'refiningLyricsAndMetadata',
               }
             : song
         ));
@@ -1263,9 +1287,7 @@ function AppContent() {
             ? {
                 ...current,
                 progress: Math.max(current.progress ?? 0, 0.05),
-                stage: params.instrumental
-                  ? 'Refining arrangement and metadata...'
-                  : 'Refining lyrics and metadata...',
+                stageKey: 'refiningLyricsAndMetadata',
               }
             : current
         );
@@ -1274,12 +1296,12 @@ function AppContent() {
       preflightStageTimers.push(setTimeout(() => {
         setSongs(prev => prev.map(song =>
           song.id === tempId && song.isGenerating && !song.queuePosition
-            ? { ...song, progress: Math.max(song.progress ?? 0, 0.08), stage: 'Queueing generation job...' }
+            ? { ...song, progress: Math.max(song.progress ?? 0, 0.08), stageKey: 'queueingGenerationJob' }
             : song
         ));
         setSelectedSong(current =>
           current?.id === tempId && current.isGenerating && !current.queuePosition
-            ? { ...current, progress: Math.max(current.progress ?? 0, 0.08), stage: 'Queueing generation job...' }
+            ? { ...current, progress: Math.max(current.progress ?? 0, 0.08), stageKey: 'queueingGenerationJob' }
             : current
         );
       }, 4200));
@@ -1353,12 +1375,12 @@ function AppContent() {
       preflightStageTimers.forEach(clearTimeout);
       setSongs(prev => prev.map(song =>
         song.id === tempId
-          ? { ...song, progress: Math.max(song.progress ?? 0, 0.1), stage: 'Generation job submitted...' }
+          ? { ...song, progress: Math.max(song.progress ?? 0, 0.1), stageKey: 'generationJobSubmitted' }
           : song
       ));
       setSelectedSong(current =>
         current?.id === tempId
-          ? { ...current, progress: Math.max(current.progress ?? 0, 0.1), stage: 'Generation job submitted...' }
+          ? { ...current, progress: Math.max(current.progress ?? 0, 0.1), stageKey: 'generationJobSubmitted' }
           : current
       );
 
@@ -1403,11 +1425,23 @@ function AppContent() {
 
         if (jobsToResume.length === 0) return;
 
+        const jobsWithLiveState = await Promise.all(jobsToResume.map(async (job: any) => {
+          const jobId = job.id || job.jobId;
+          if (!jobId) return { ...job, liveStatus: null };
+          try {
+            const liveStatus = await generateApi.getStatus(jobId, token);
+            return { ...job, liveStatus };
+          } catch (error) {
+            console.warn('Failed to fetch live generation status during resume:', jobId, error);
+            return { ...job, liveStatus: null };
+          }
+        }));
+
         setSongs(prev => {
           const existingIds = new Set(prev.map(s => s.id));
           const next = [...prev];
 
-          for (const job of jobsToResume) {
+          for (const job of jobsWithLiveState) {
             const jobId = job.id || job.jobId;
             if (!jobId) continue;
             const tempId = `job_${jobId}`;
@@ -1422,13 +1456,30 @@ function AppContent() {
               }
             })();
 
-            next.unshift(buildTempSongFromParams(params, tempId, job.createdAtDate));
+            const liveStatus = job.liveStatus;
+            const normalizedProgress = Number.isFinite(Number(liveStatus?.progress))
+              ? (Number(liveStatus.progress) > 1 ? Number(liveStatus.progress) / 100 : Number(liveStatus.progress))
+              : undefined;
+            const queuePosition = liveStatus?.status === 'queued'
+              ? liveStatus.queuePosition
+              : undefined;
+            const stage = liveStatus?.stage;
+            const stageKey = liveStatus?.status === 'queued'
+              ? 'queuedStage'
+              : getGenerationStageKey(stage) ?? 'generationJobSubmitted';
+
+            next.unshift(buildTempSongFromParams(params, tempId, job.createdAtDate, {
+              progress: normalizedProgress,
+              queuePosition,
+              stage,
+              stageKey,
+            }));
             existingIds.add(tempId);
           }
           return next;
         });
 
-        for (const job of jobsToResume) {
+        for (const job of jobsWithLiveState) {
           const jobId = job.id || job.jobId;
           if (!jobId) continue;
           const tempId = `job_${jobId}`;
@@ -1472,14 +1523,22 @@ function AppContent() {
     const audio = audioRef.current;
     const playbackUrl = getSongPlaybackUrl(song);
     if (!audio || !playbackUrl) return;
+    const resolvedPlaybackUrl = new URL(playbackUrl, window.location.href).href;
+    const isPreloadedMatch =
+      currentSongIdRef.current === song.id &&
+      audio.src === resolvedPlaybackUrl;
 
     setCurrentTime(0);
-    setDuration(0);
+    setDuration(
+      isPreloadedMatch && Number.isFinite(audio.duration) && audio.duration > 0
+        ? audio.duration
+        : 0
+    );
     if (!playbackPrimedRef.current) {
       setIsPlaybackBootstrapping(true);
     }
 
-    if (currentSongIdRef.current !== song.id || audio.src !== new URL(playbackUrl, window.location.href).href) {
+    if (!isPreloadedMatch) {
       currentSongIdRef.current = song.id;
       audio.src = playbackUrl;
       audio.load();

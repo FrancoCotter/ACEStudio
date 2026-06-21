@@ -677,7 +677,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                                 <button
                                     onClick={() => setIsInfoModalOpen(true)}
                                     className="flex h-14 w-14 items-center justify-center rounded-full bg-white/15 text-white/85 backdrop-blur-md transition hover:bg-white/25 hover:text-white"
-                                    title="Profile info"
+                                    title={t('profileInfo')}
                                 >
                                     <Info size={25} />
                                 </button>
@@ -699,7 +699,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
 
                     <div className="mt-12 grid gap-10 md:grid-cols-2">
                         <div>
-                            <h2 className="mb-4 text-lg font-bold text-white">Latest Release</h2>
+                            <h2 className="mb-4 text-lg font-bold text-white">{t('latestRelease')}</h2>
                             <div className="min-h-[212px]">
                             {isHeroCollectionsLoading ? latestReleaseSkeleton : latestSong ? (
                                 <div className="grid w-full grid-cols-[180px_1fr] gap-5 rounded-xl p-2 transition hover:bg-white/10">
@@ -722,11 +722,11 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
 
                         <div>
                             <div className="mb-4 flex items-center justify-between">
-                                <h2 className="text-lg font-bold text-white">Top Songs</h2>
+                                <h2 className="text-lg font-bold text-white">{t('topSongs')}</h2>
                                 <button
                                     onClick={() => songsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                                     className="inline-flex items-center gap-1 text-sm font-semibold text-white/65 transition hover:text-white"
-                                    aria-label="View all songs"
+                                    aria-label={t('viewAllSongs')}
                                 >
                                     <ChevronRight size={22} />
                                 </button>
@@ -767,13 +767,13 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                 {/* Songs Section */}
                 <section ref={songsSectionRef}>
                     <div className="flex items-center justify-between mb-4 md:mb-6">
-                        <h2 className="text-xl md:text-2xl font-bold text-zinc-900 dark:text-white">{t('songs')}</h2>
+                        <h2 className="text-xl md:text-2xl font-bold text-zinc-900 dark:text-white">{t('allSongs')}</h2>
                     </div>
 
                     {displaySongs.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16 text-zinc-500">
                             <MusicIcon size={64} className="mb-4 opacity-50" />
-                            <p>{publicSongs.length > 0 ? 'All ranked songs are shown above.' : t('noPublicSongsYet')}</p>
+                            <p>{publicSongs.length > 0 ? t('allRankedSongsShownAbove') : t('noPublicSongsYet')}</p>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
@@ -886,7 +886,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                         <button
                             onClick={() => setIsInfoModalOpen(false)}
                             className="absolute left-5 top-5 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-black/25 text-white/90 backdrop-blur-md transition hover:bg-black/45 hover:text-white"
-                            aria-label="Close profile info"
+                            aria-label={t('closeProfileInfo')}
                         >
                             <X size={28} />
                         </button>
@@ -911,14 +911,14 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                                 <h2 className="text-5xl font-black tracking-normal drop-shadow-lg sm:text-6xl">{profileUser.username}</h2>
 
                                 <div className="mt-7">
-                                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/55">Joined</p>
+                                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/55">{t('joined')}</p>
                                     <p className="mt-2 text-xl font-semibold text-white/95">
                                         {new Date(profileUser.created_at).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', { month: 'long', year: 'numeric' })}
                                     </p>
                                 </div>
 
                                 <div className="mt-7">
-                                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/55">Creative Summary</p>
+                                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/55">{t('creativeSummary')}</p>
                                     <div className="mt-3 flex flex-wrap items-center gap-x-7 gap-y-3 text-white/95">
                                         <span className="inline-flex items-center gap-2 text-lg font-semibold">
                                             <MusicIcon size={20} className="text-white/75" />
@@ -940,7 +940,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
 
                                 {usedModelLabels.length > 0 && (
                                     <div className="mt-7">
-                                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/55">Models Used</p>
+                                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/55">{t('modelsUsed')}</p>
                                         <div className="mt-3 flex flex-wrap gap-2">
                                             {usedModelLabels.map(label => (
                                                 <span
@@ -956,7 +956,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
 
                                 {formattedBio.length > 0 && (
                                     <div className="mt-8">
-                                        <h3 className="mb-3 text-2xl font-black tracking-normal text-white">About</h3>
+                                        <h3 className="mb-3 text-2xl font-black tracking-normal text-white">{t('about')}</h3>
                                         <div className="space-y-4 text-lg font-medium leading-relaxed text-white/86">
                                             {formattedBio.map((paragraph, index) => (
                                                 <p key={index}>{paragraph}</p>

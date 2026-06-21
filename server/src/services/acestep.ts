@@ -150,7 +150,7 @@ async function buildGradioArgs(params: GenerationParams): Promise<unknown[]> {
   const caption = params.style || 'pop music';
   const prompt = params.customMode ? caption : (params.songDescription || caption);
   const lyrics = params.instrumental ? '' : (params.lyrics || '');
-  const simpleModeUsesLmPlanning = !params.customMode;
+  const simpleModeUsesLmPlanning = !params.customMode && !params.instrumental;
   
   // Enable thinking
   const isThinking = params.thinking ?? false;
@@ -1001,6 +1001,14 @@ function extractGradioScoreOutputs(data: unknown[]): string[] {
   return scores;
 }
 
+function normalizeKeyScale(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  return raw
+    .replace(/\u0000/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function parseGenerationDetails(details: string | undefined): {
   bpm?: number;
   duration?: number;
@@ -1009,15 +1017,15 @@ function parseGenerationDetails(details: string | undefined): {
 } {
   if (!details) return {};
   try {
-    const bpmMatch = details.match(/BPM:\s*(\d+)/i);
-    const durationMatch = details.match(/Duration:\s*([\d.]+)/i);
-    const keyMatch = details.match(/Key:\s*([A-G][#b]?\s*(?:major|minor))/i);
-    const timeMatch = details.match(/Time Signature:\s*(\d+\/\d+)/i);
+    const bpmMatch = details.match(/(?:^|\n)\s*(?:bpm|BPM)\s*:\s*(\d+)/i);
+    const durationMatch = details.match(/(?:^|\n)\s*(?:duration|Duration)\s*:\s*([\d.]+)/i);
+    const keyMatch = details.match(/(?:^|\n)\s*(?:key|keyscale|Key|KeyScale)\s*:\s*([^\n\r]+)/i);
+    const timeMatch = details.match(/(?:^|\n)\s*(?:time\s*signature|timesignature|Time\s*Signature)\s*:\s*([^\n\r]+)/i);
     return {
       bpm: bpmMatch ? parseInt(bpmMatch[1]) : undefined,
       duration: durationMatch ? parseFloat(durationMatch[1]) : undefined,
-      keyScale: keyMatch ? keyMatch[1] : undefined,
-      timeSignature: timeMatch ? timeMatch[1] : undefined,
+      keyScale: normalizeKeyScale(keyMatch?.[1]),
+      timeSignature: timeMatch?.[1]?.trim() || undefined,
     };
   } catch {
     return {};
@@ -1037,7 +1045,7 @@ async function processGenerationViaPython(
   const caption = params.style || 'pop music';
   const prompt = params.customMode ? caption : (params.songDescription || caption);
   const lyrics = params.instrumental ? '' : (params.lyrics || '');
-  const simpleModeUsesLmPlanning = !params.customMode;
+  const simpleModeUsesLmPlanning = !params.customMode && !params.instrumental;
   const effectiveThinking = (params.thinking ?? false) || simpleModeUsesLmPlanning;
 
   console.log(`Job ${jobId}: Using local Python generation pipeline`, {
@@ -1187,10 +1195,10 @@ async function processGenerationViaPython(
     job.status = 'succeeded';
     job.result = {
       audioUrls,
-      duration: finalDuration,
-      bpm: params.bpm,
-      keyScale: params.keyScale,
-      timeSignature: params.timeSignature,
+      duration: result.duration || finalDuration,
+      bpm: result.bpm || params.bpm,
+      keyScale: result.keyScale || params.keyScale,
+      timeSignature: result.timeSignature || params.timeSignature,
       scores: result.scores,
       status: 'succeeded',
     };
@@ -1214,6 +1222,10 @@ interface PythonResult {
   audio_paths?: string[];
   scores?: string[];
   elapsed_seconds?: number;
+  bpm?: number;
+  duration?: number;
+  keyScale?: string;
+  timeSignature?: string;
   error?: string;
 }
 
@@ -1289,13 +1301,20 @@ function runPythonGeneration(
         return;
       }
 
-      try {
-        const result = JSON.parse(jsonLine);
-        resolve(result);
-      } catch {
-        resolve({ success: false, error: 'Invalid JSON from generation script' });
-      }
-    });
+        try {
+          const result = JSON.parse(jsonLine) as PythonResult;
+          const parsedMetas = parseGenerationDetails(stderr);
+          resolve({
+            ...result,
+            bpm: result.bpm ?? parsedMetas.bpm,
+            duration: result.duration ?? parsedMetas.duration,
+            keyScale: result.keyScale ?? parsedMetas.keyScale,
+            timeSignature: result.timeSignature ?? parsedMetas.timeSignature,
+          });
+        } catch {
+          resolve({ success: false, error: 'Invalid JSON from generation script' });
+        }
+      });
 
     proc.on('error', (err) => {
       clearTimeout(timer);

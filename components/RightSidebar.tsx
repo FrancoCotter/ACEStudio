@@ -8,6 +8,7 @@ import { SongDropdownMenu } from './SongDropdownMenu';
 import { AlbumCover } from './AlbumCover';
 import { GeneratingIndicator } from './GeneratingIndicator';
 import { getAvatarUrl } from '../utils/avatar';
+import { getGeneratingSongTitle, getGenerationStageText, getModelDisplayName } from '../utils/generationDisplay';
 import { getSongCaption, getSongTags } from '../utils/songMetadata';
 import { hasRenderableSyncedLyrics } from '../utils/syncedLyrics';
 import { getSongLyricsUrl, getSongPlaybackUrl } from '../utils/songPlayback';
@@ -88,10 +89,10 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
     const canExpandCaption = songCaption.length > 140;
     const generationParams = ((song?.generationParams ?? {}) as Record<string, any>);
     const generationModel = song?.ditModel || generationParams.ditModel || generationParams.dit_model;
-    const generationDuration = generationParams.duration;
-    const generationBpm = generationParams.bpm;
-    const generationKeyScale = generationParams.keyScale || generationParams.key_scale;
-    const generationTimeSignature = generationParams.timeSignature || generationParams.time_signature;
+    const generationDuration = song?.durationSeconds ?? generationParams.duration;
+    const generationBpm = song?.bpm ?? generationParams.bpm;
+    const generationKeyScale = song?.key_scale || generationParams.keyScale || generationParams.key_scale;
+    const generationTimeSignature = song?.time_signature || generationParams.timeSignature || generationParams.time_signature;
     const generationTaskType = generationParams.taskType || generationParams.task_type || 'text2music';
     const generationHasReference = Boolean(generationParams.referenceAudioUrl || generationParams.reference_audio_url);
     const generationHasSource = Boolean(generationParams.sourceAudioUrl || generationParams.source_audio_url);
@@ -108,27 +109,27 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
             : !(song?.lyrics || '').trim();
     const generationMode =
         generationHasSource
-            ? 'Cover'
+            ? t('coverTask')
             : generationTaskType === 'repaint'
-                ? 'Repaint'
+                ? t('repaintTask')
                 : generationHasReference
-                    ? 'Reference'
+                    ? t('reference')
                     : generationTaskType === 'text2music'
-                        ? 'T2M'
+                        ? t('textToMusic')
                         : generationTaskType;
 
     const generationFacts = song ? [
-        generationModel ? { label: 'Model', value: generationModel } : null,
-        { label: 'Mode', value: generationMode },
-        generationInstrumental ? { label: 'Vocals', value: 'Instrumental' } : { label: 'Vocals', value: 'Vocal' },
-        generationThinking ? { label: 'Think', value: 'On' } : null,
-        hasVerifiedDynamicLyrics ? { label: 'Lyrics', value: 'Synced LRC' } : null,
-        typeof generationDuration === 'number' && generationDuration > 0 ? { label: 'Duration', value: `${generationDuration}s` } : null,
+        generationModel ? { label: t('modelLabel'), value: getModelDisplayName(generationModel) } : null,
+        { label: t('modeLabel'), value: generationMode },
+        generationInstrumental ? { label: t('vocalsLabel'), value: t('instrumental') } : { label: t('vocalsLabel'), value: t('vocal') },
+        generationThinking ? { label: t('thinkLabel'), value: t('on') } : null,
+        hasVerifiedDynamicLyrics ? { label: t('lyricsLabel'), value: t('syncedLrc') } : null,
+        typeof generationDuration === 'number' && generationDuration > 0 ? { label: t('duration'), value: `${generationDuration}s` } : null,
         typeof generationBpm === 'number' && generationBpm > 0 ? { label: 'BPM', value: String(generationBpm) } : null,
-        typeof generationKeyScale === 'string' && generationKeyScale ? { label: 'Key', value: generationKeyScale } : null,
-        typeof generationTimeSignature === 'string' && generationTimeSignature ? { label: 'Signature', value: generationTimeSignature } : null,
+        typeof generationKeyScale === 'string' && generationKeyScale ? { label: t('key'), value: generationKeyScale } : null,
+        typeof generationTimeSignature === 'string' && generationTimeSignature ? { label: t('signatureLabel'), value: generationTimeSignature } : null,
         typeof generationParams.vaeModel === 'string' && generationParams.vaeModel ? { label: 'VAE', value: generationParams.vaeModel } : null,
-        typeof generationParams.dcwEnabled === 'boolean' ? { label: 'DCW', value: generationParams.dcwEnabled ? 'On' : 'Off' } : null,
+        typeof generationParams.dcwEnabled === 'boolean' ? { label: 'DCW', value: generationParams.dcwEnabled ? t('on') : t('off') } : null,
     ].filter(Boolean) as Array<{ label: string; value: string }> : [];
     const hasGenerationSources = Boolean(song?.generationParams?.referenceAudioUrl || song?.generationParams?.sourceAudioUrl);
 
@@ -196,9 +197,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
 
     const getGenerationStatusText = (): string => {
         if (!song) return '';
-        if (song.queuePosition) return `Queued #${song.queuePosition}`;
-        const stage = song.stage?.trim() || 'Starting generation...';
-        return `${stage} · ${formatElapsedTime(song.createdAt)}`;
+        if (song.queuePosition) return t('queuedStatus').replace('{position}', String(song.queuePosition));
+        const stage = getGenerationStageText(song, t);
+        return `${stage} - ${formatElapsedTime(song.createdAt)}`;
     };
 
     const measuredGenerationProgress = song && typeof song.progress === 'number'
@@ -222,12 +223,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
     const saveTitleEdit = async () => {
         if (!song) return;
         if (!token) {
-            setTitleError('Please sign in to rename.');
+            setTitleError(t('renameSignIn'));
             return;
         }
         const trimmed = titleDraft.trim();
         if (!trimmed) {
-            setTitleError('Title cannot be empty.');
+            setTitleError(t('titleCannotBeEmpty'));
             return;
         }
         if (trimmed === song.title) {
@@ -241,7 +242,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
             onSongUpdate?.({ ...song, title: trimmed });
             setIsEditingTitle(false);
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Rename failed';
+            const message = err instanceof Error ? err.message : t('renameFailed');
             setTitleError(message);
         } finally {
             setIsSavingTitle(false);
@@ -249,7 +250,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
     };
 
     const getSourceLabel = (url?: string) => {
-        if (!url) return 'None';
+        if (!url) return t('none');
         try {
             const parsed = new URL(url, window.location.origin);
             const name = decodeURIComponent(parsed.pathname.split('/').pop() || url);
@@ -297,7 +298,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                             ) : (
                                 <AlbumCover seed={song.id || song.title} size="full" className="h-full w-full opacity-45 blur-md scale-110" />
                             )}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-black/25" />
+                           <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-black/25" />
                             <div className="absolute inset-0 flex items-center justify-center">
                                 <GeneratingIndicator size="lg" />
                                 
@@ -316,7 +317,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                         <div className="space-y-3">
                             <div>
                                 <h2 className="text-2xl font-bold text-zinc-900 dark:text-white leading-tight tracking-tight">
-                                    {song.title || 'Generating...'}
+                                    {getGeneratingSongTitle(song, t)}
                                 </h2>
                                 {song.style && (
                                     <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
@@ -454,7 +455,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                             startTitleEdit();
                                         }}
                                         className="text-zinc-400 hover:text-black dark:hover:text-white p-1 mr-1"
-                                        title="Rename song"
+                                        title={t('edit')}
                                     >
                                         <Edit3 size={18} />
                                     </button>
@@ -558,7 +559,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                         <div className="space-y-3">
                             <div className="flex items-center gap-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-[0.18em]">
                                 <Sparkles size={13} />
-                                Generation
+                                {t('generationLabel')}
                             </div>
                             <div className="space-y-0.5">
                                 {generationFacts.map((fact, index) => (
@@ -586,7 +587,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                         <div className="space-y-3">
                             <div className="flex items-center gap-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
                                 <LinkIcon size={14} />
-                                Sources
+                                {t('sourcesLabel')}
                             </div>
                             <div className="space-y-2">
                                 {song.generationParams?.referenceAudioUrl && (
@@ -594,7 +595,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                         <div className="flex items-center gap-2 min-w-0">
                                             <Music size={14} className="text-zinc-400" />
                                             <div className="min-w-0">
-                                                <div className="text-xs text-zinc-500">Reference</div>
+                                                <div className="text-xs text-zinc-500">{t('reference')}</div>
                                                 <div className="text-sm font-medium text-zinc-900 dark:text-white truncate">
                                                     {song.generationParams?.referenceAudioTitle || getSourceLabel(song.generationParams?.referenceAudioUrl)}
                                                 </div>
@@ -608,7 +609,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                                         id: `ref_${song.id}`,
                                                         title: song.generationParams?.referenceAudioTitle || getSourceLabel(song.generationParams?.referenceAudioUrl),
                                                         lyrics: '',
-                                                        style: 'Reference',
+                                                        style: t('reference'),
                                                         coverUrl: song.coverUrl,
                                                         duration: '0:00',
                                                         createdAt: new Date(),
@@ -621,7 +622,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                                     onPlay(previewSong);
                                                 }}
                                             >
-                                                Play
+                                                {t('play')}
                                             </button>
                                     </div>
                                 )}
@@ -630,7 +631,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                         <div className="flex items-center gap-2 min-w-0">
                                             <Layers size={14} className="text-zinc-400" />
                                             <div className="min-w-0">
-                                                <div className="text-xs text-zinc-500">Cover</div>
+                                                <div className="text-xs text-zinc-500">{t('cover')}</div>
                                                 <div className="text-sm font-medium text-zinc-900 dark:text-white truncate">
                                                     {song.generationParams?.sourceAudioTitle || getSourceLabel(song.generationParams?.sourceAudioUrl)}
                                                 </div>
@@ -644,7 +645,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                                         id: `cover_${song.id}`,
                                                         title: song.generationParams?.sourceAudioTitle || getSourceLabel(song.generationParams?.sourceAudioUrl),
                                                         lyrics: '',
-                                                        style: 'Cover',
+                                                        style: t('cover'),
                                                         coverUrl: song.coverUrl,
                                                         duration: '0:00',
                                                         createdAt: new Date(),
@@ -657,7 +658,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                                     onPlay(previewSong);
                                                 }}
                                             >
-                                                Play
+                                                {t('play')}
                                             </button>
                                     </div>
                                 )}
@@ -689,7 +690,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                     }
                                 }}
                                 className={`relative z-10 flex items-center gap-1 text-[10px] font-medium transition-colors cursor-pointer ${copiedStyle ? 'text-green-500' : 'text-zinc-500 hover:text-black dark:hover:text-white'}`}
-                                title="Copy song details"
+                                title={t('copySongDetails')}
                             >
                                 <Copy size={12} /> {copiedStyle ? t('copied') : t('copy')}
                             </button>
@@ -708,14 +709,14 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                         onClick={() => setCaptionExpanded(prev => !prev)}
                                         className="mt-2 inline-flex items-center rounded-md bg-zinc-200 px-2 py-0.5 text-[11px] font-bold text-zinc-600 transition-colors hover:bg-zinc-300 hover:text-zinc-900 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-white"
                                     >
-                                        {captionExpanded ? 'Less' : `+${t('more')}`}
+                                        {captionExpanded ? t('less') : `+${t('more')}`}
                                     </button>
                                 )}
                             </div>
                         )}
                         {!songCaption && displayTags.length > 0 && (
                             <div className="space-y-1.5">
-                                <h3 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Tags</h3>
+                                <h3 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{t('styleTags')}</h3>
                                 <div className="flex flex-wrap gap-1.5">
                                     {(tagsExpanded ? displayTags : displayTags.slice(0, 7)).map(tag => (
                                         <span key={tag} className="px-2 py-0.5 bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 border border-zinc-200 dark:border-white/10 rounded text-[11px] font-medium text-zinc-600 dark:text-zinc-300 transition-colors">
@@ -737,7 +738,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                             onClick={() => setTagsExpanded(false)}
                                             className="px-2 py-0.5 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 rounded text-[11px] font-bold text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white transition-colors"
                                         >
-                                            Less
+                                            {t('less')}
                                         </button>
                                     )}
                                 </div>
@@ -745,7 +746,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                         )}
                         {!songCaption && displayTags.length === 0 && (
                             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                                No song details available.
+                                {t('noSongDetailsAvailable')}
                             </p>
                         )}
                     </div>
@@ -774,7 +775,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                         </div>
                         <div className="p-4 max-h-[300px] overflow-y-auto custom-scrollbar">
                             <div className="text-sm text-zinc-700 dark:text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed opacity-90">
-                                {song.lyrics || <div className="text-zinc-400 dark:text-zinc-600 italic text-center py-8">Instrumental<br /><span className="text-xs not-italic">No lyrics generated</span></div>}
+                                {song.lyrics || <div className="text-zinc-400 dark:text-zinc-600 italic text-center py-8">{t('instrumental')}<br /><span className="text-xs not-italic">{t('noLyricsGenerated')}</span></div>}
                             </div>
                         </div>
                     </div>

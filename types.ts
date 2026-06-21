@@ -4,6 +4,10 @@ export interface Song {
   lyrics: string;
   style: string;
   caption?: string;
+  bpm?: number;
+  key_scale?: string;
+  time_signature?: string;
+  durationSeconds?: number;
   coverUrl: string;
   duration: string;
   createdAt: Date;
@@ -11,6 +15,7 @@ export interface Song {
   queuePosition?: number; // Position in queue (undefined = actively generating, number = waiting in queue)
   progress?: number;
   stage?: string;
+  stageKey?: string;
   generationParams?: any;
   tags: string[];
   audioUrl?: string;

@@ -904,11 +904,11 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
     }
 
     const isCustomMode = Boolean(customMode);
-    const simpleModeUsesLmPlanning = !isCustomMode;
-    const effectiveThinking = isCustomMode ? Boolean(thinking) : true;
     let effectiveStyle = style;
     let effectiveLyrics = lyrics;
     let effectiveInstrumental = Boolean(instrumental);
+    const simpleModeUsesLmPlanning = !isCustomMode && !effectiveInstrumental;
+    const effectiveThinking = isCustomMode ? Boolean(thinking) : simpleModeUsesLmPlanning;
     let effectiveVocalLanguage = vocalLanguage || 'unknown';
     let effectiveDuration = duration;
     let effectiveBpm = bpm;
@@ -945,6 +945,9 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
         res.status(500).json({ error: 'Simple mode LM sample creation did not generate lyrics. Try again or switch to custom mode.' });
         return;
       }
+    } else if (!isCustomMode) {
+      effectiveStyle = songDescription || style || '';
+      effectiveLyrics = '';
     }
 
     let resolvedTitle = formattedTitle;

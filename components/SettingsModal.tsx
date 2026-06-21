@@ -127,7 +127,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, t
                                 </button>
                                 {showLangInfo && (
                                     <div className="absolute left-0 top-8 z-10 w-64 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl p-3">
-                                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">{t('localizedBy')}</p>
+                                        <p className="text-xs text-zinc-500 dark:text-zinc-400">{t('localizedBy')}</p>
+                                        <p className="mt-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                                            {t('originalLocalizationCredit')}
+                                        </p>
+                                        <p className="mt-1.5 mb-3 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                                            {t('editionLocalizationCredit')}
+                                        </p>
                                         <div className="flex flex-wrap gap-1.5">
                                             <a
                                                 href="https://x.com/bdsqlsz"
@@ -202,13 +208,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, t
                             </div>
 
                             <div className="grid gap-3 sm:grid-cols-2">
-                                <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-white/10 dark:bg-zinc-800/45">
+                                <div className="flex h-full flex-col rounded-2xl border border-zinc-200 bg-white p-4 dark:border-white/10 dark:bg-zinc-800/45">
                                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">{t('studioCustomization')}</p>
                                     <p className="mt-2 font-semibold text-zinc-900 dark:text-white">Mariano</p>
                                     <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                                         {t('studioCustomizationDescription')}
                                     </p>
-                                    <div className="mt-4 flex flex-wrap gap-2">
+                                    <div className="mt-auto pt-4 flex flex-wrap gap-2">
                                         <a
                                             href="https://x.com/Mariano_arti"
                                             target="_blank"
@@ -232,13 +238,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, t
                                     </div>
                                 </div>
 
-                                <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-white/10 dark:bg-zinc-800/45">
+                                <div className="flex h-full flex-col rounded-2xl border border-zinc-200 bg-white p-4 dark:border-white/10 dark:bg-zinc-800/45">
                                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">{t('originalProject')}</p>
                                     <p className="mt-2 font-semibold text-zinc-900 dark:text-white">Ambsd</p>
                                     <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                                         {t('originalProjectDescription')}
                                     </p>
-                                    <div className="mt-4 flex flex-wrap gap-2">
+                                    <div className="mt-auto pt-4 flex flex-wrap gap-2">
                                         <a
                                             href="https://x.com/AmbsdOP"
                                             target="_blank"
