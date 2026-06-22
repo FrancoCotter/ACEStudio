@@ -19,6 +19,35 @@ interface UserProfileProps {
     onToggleLike?: (songId: string) => void;
 }
 
+type ProfilePalette = { base: string; accent: string };
+
+const DEFAULT_HERO_PALETTE: ProfilePalette = { base: '#0b0d0b', accent: '#1f261f' };
+const DEFAULT_INFO_PALETTE: ProfilePalette = { base: '#1f261f', accent: '#4d5a43' };
+
+const getHeroPaletteStorageKey = (username: string) => `userprofile:hero-palette:${username.toLowerCase()}`;
+
+const readCachedHeroPalette = (username: string): ProfilePalette | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+        const raw = window.localStorage.getItem(getHeroPaletteStorageKey(username));
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Partial<ProfilePalette>;
+        if (typeof parsed.base !== 'string' || typeof parsed.accent !== 'string') return null;
+        return { base: parsed.base, accent: parsed.accent };
+    } catch {
+        return null;
+    }
+};
+
+const writeCachedHeroPalette = (username: string, palette: ProfilePalette) => {
+    if (typeof window === 'undefined') return;
+    try {
+        window.localStorage.setItem(getHeroPaletteStorageKey(username), JSON.stringify(palette));
+    } catch {
+        // ignore storage failures
+    }
+};
+
 export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser = null, onBack, onPlaySong, onNavigateToProfile, onNavigateToPlaylist, currentSong, isPlaying, likedSongIds = new Set(), onToggleLike }) => {
     const { t, language } = useI18n();
     const { user: currentUser, token, refreshUser } = useAuth();
@@ -27,11 +56,12 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
     const [publicPlaylists, setPublicPlaylists] = useState<Playlist[]>([]);
     const [loading, setLoading] = useState(!initialUser);
     const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
-    const [heroPalette, setHeroPalette] = useState({ base: '#0b0d0b', accent: '#1f261f' });
-    const [infoPalette, setInfoPalette] = useState({ base: '#1f261f', accent: '#4d5a43' });
+    const [heroPalette, setHeroPalette] = useState<ProfilePalette>(() => readCachedHeroPalette(username) || DEFAULT_HERO_PALETTE);
+    const [infoPalette, setInfoPalette] = useState<ProfilePalette>(DEFAULT_INFO_PALETTE);
     const [profileAssetVersion, setProfileAssetVersion] = useState(0);
     const scrollContainerRef = useRef<HTMLDivElement | null>(null);
     const songsSectionRef = useRef<HTMLElement | null>(null);
+    const heroImageRef = useRef<HTMLImageElement | null>(null);
     const heroBlurLayerRef = useRef<HTMLDivElement | null>(null);
     const heroCoverLayerRef = useRef<HTMLDivElement | null>(null);
     const infoImageLayerRef = useRef<HTMLImageElement | null>(null);
@@ -67,6 +97,11 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
             cancelled = true;
         };
     }, [username, initialUser]);
+
+    useEffect(() => {
+        const cachedPalette = readCachedHeroPalette(username);
+        setHeroPalette(cachedPalette || DEFAULT_HERO_PALETTE);
+    }, [username]);
 
     useEffect(() => {
         if (!isEditModalOpen || !profileUser) return;
@@ -180,18 +215,19 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
     const handleHeroImageLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
         const palette = extractPaletteFromImage(
             event.currentTarget,
-            { base: '#0b0d0b', accent: '#1f261f' },
+            DEFAULT_HERO_PALETTE,
             { base: 0.42, accent: 0.68, lift: 12 }
         );
         if (palette) {
             setHeroPalette(palette);
+            writeCachedHeroPalette(username, palette);
         }
     };
 
     const handleInfoImageLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
         const palette = extractPaletteFromImage(
             event.currentTarget,
-            { base: '#1f261f', accent: '#4d5a43' },
+            DEFAULT_INFO_PALETTE,
             { base: 0.28, accent: 0.72, lift: 22 }
         );
         if (palette) {
@@ -230,6 +266,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                 title: s.title,
                 lyrics: s.lyrics,
                 style: s.style,
+                caption: s.caption,
                 coverUrl: getCoverUrl(s.cover_url || s.coverUrl, s.id),
                 duration: s.duration ? `${Math.floor(s.duration / 60)}:${String(Math.floor(s.duration % 60)).padStart(2, '0')}` : '0:00',
                 createdAt: new Date(s.created_at),
@@ -259,6 +296,129 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
         } finally {
             if (!isCancelled()) setLoading(false);
         }
+    };
+
+    const buildSongGenreSummary = (song: Song): string => {
+        const hasPhrase = (text: string, phrase: string) => {
+            const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const pattern = escaped.replace(/\s+/g, '[\\s-]+');
+            return new RegExp(`(^|[^a-z0-9])${pattern}([^a-z0-9]|$)`, 'i').test(text);
+        };
+
+        const rawTags = Array.isArray(song.tags)
+            ? song.tags
+            : typeof song.tags === 'string'
+                ? song.tags.split(/[,|/]+/)
+                : [];
+
+        const normalizeToken = (value: string) =>
+            value
+                .trim()
+                .toLowerCase()
+                .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '')
+                .replace(/\s+/g, ' ');
+
+        const titleWords = new Set(
+            (song.title || '')
+                .toLowerCase()
+                .split(/[^a-z0-9]+/i)
+                .filter(Boolean)
+        );
+
+        const blocked = new Set([
+            'with', 'and', 'the', 'for', 'that', 'this', 'from', 'into', 'about', 'over', 'under', 'through',
+            'track', 'song', 'ballad', 'lyrics', 'vocal', 'vocals', 'male', 'female', 'feat', 'featuring',
+            'intro', 'outro', 'verse', 'chorus', 'bridge', 'cinematic', 'melancholic', 'energetic', 'epic',
+            'gentle', 'driving', 'uplifting', 'moody', 'dreamy', 'warm', 'soft', 'instrumental', 'production',
+            'features', 'feature', 'appearing', 'gradual', 'dynamic', 'builds', 'build', 'sparse', 'only',
+            'climax', 'textures', 'texture', 'soundscapes', 'soundscape'
+        ]);
+
+        const formatLabel = (value: string) =>
+            value
+                .split(/\s+/)
+                .map(part => /^[a-z]+$/i.test(part) ? part.toLowerCase() : part)
+                .join(' ');
+
+        const tagCandidates = rawTags
+            .map(tag => normalizeToken(String(tag)))
+            .filter(tag => tag && !blocked.has(tag) && !titleWords.has(tag) && tag.length >= 3);
+
+        if (tagCandidates.length > 0) {
+            return Array.from(new Set(tagCandidates)).slice(0, 3).map(formatLabel).join(' · ');
+        }
+
+        const source = `${song.style || ''} ${song.caption || ''} ${song.generationParams?.prompt || ''}`.toLowerCase();
+        const phrases = [
+            'dream pop', 'indie rock', 'indie pop', 'indie folk', 'synth pop', 'art pop', 'post rock',
+            'post-rock', 'shoegaze', 'slowcore', 'afrobeat', 'hardstyle', 'progressive trance', 'latin pop', 'c pop',
+            'k pop', 'j pop', 'hip hop', 'hip-hop', 'trap', 'drill', 'boom bap', 'rap', 'lo fi', 'r&b',
+            'folk pop', 'singer songwriter', 'felt piano', 'grand piano', 'electric guitar', 'acoustic guitar',
+            'electronic pop', 'vocaloid', 'chiptune', '808 bass', 'trap hi-hats', 'delayed guitars', 'ambient textures', 'ambient', 'ethereal',
+            'male vocal', 'female vocal', 'male rapper', 'female rapper', 'baritone', 'soprano'
+        ];
+
+        const picked: string[] = [];
+        const highPriorityPhrases = [
+            'hip-hop', 'hip hop', 'rap', 'trap', 'drill', 'boom bap', 'post-rock', 'post rock', 'shoegaze',
+            'slowcore', 'dream pop', 'indie rock', 'afrobeat', 'hardstyle', 'progressive trance',
+            'electronic pop', 'vocaloid', 'chiptune'
+        ];
+
+        for (const phrase of highPriorityPhrases) {
+            if (hasPhrase(source, phrase) && !picked.includes(phrase)) {
+                picked.push(phrase);
+            }
+            if (picked.length >= 3) break;
+        }
+
+        for (const phrase of phrases) {
+            if (hasPhrase(source, phrase) && !picked.includes(phrase)) {
+                picked.push(phrase);
+            }
+            if (picked.length >= 3) break;
+        }
+
+        const descriptors = [
+            'chinese', 'japanese', 'korean', 'latin', 'french', 'african', 'arabic',
+            'orchestral', 'acoustic', 'electronic', 'ambient', 'ethereal', 'cinematic', 'folk'
+        ];
+
+        for (const descriptor of descriptors) {
+            if (hasPhrase(source, descriptor) && !picked.includes(descriptor)) {
+                picked.unshift(descriptor);
+            }
+            if (picked.length >= 3) break;
+        }
+
+        if (picked.length > 0) {
+            const normalizedPicked = picked
+                .map(value => value === 'post rock' ? 'post-rock' : value)
+                .map(value => value === 'hip hop' ? 'hip-hop' : value)
+                .map(value => value === 'male rapper' || value === 'female rapper' ? 'rap' : value)
+                .map(formatLabel);
+            return Array.from(new Set(normalizedPicked)).slice(0, 3).join(' · ');
+        }
+
+        const fallbackTokens = source
+            .split(/[,.|/]+/)
+            .map(part => normalizeToken(part))
+            .filter(part =>
+                part &&
+                !blocked.has(part) &&
+                !titleWords.has(part) &&
+                part.length >= 3 &&
+                part.length <= 24 &&
+                !part.startsWith('a ') &&
+                !part.startsWith('an ') &&
+                !part.startsWith('the ') &&
+                !/\b(with|featuring|appearing|production features)\b/.test(part)
+            )
+            .flatMap(part => part.split(/\s+(?:with|and)\s+/))
+            .map(part => normalizeToken(part))
+            .filter(part => part && !blocked.has(part) && part.length >= 3 && part.length <= 24);
+
+        return Array.from(new Set(fallbackTokens)).slice(0, 3).map(formatLabel).join(' · ') || formatLabel(song.style || '');
     };
 
     const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -398,8 +558,11 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
 
     const totalLikes = publicSongs.reduce((sum, song) => sum + (song.likeCount || 0), 0);
     const totalPlays = publicSongs.reduce((sum, song) => sum + (song.viewCount || 0), 0);
+    const isProfileLoading = loading && !profileUser;
     const isOwner = !!profileUser && currentUser?.id === profileUser.id;
     const isHeroCollectionsLoading = loading && publicSongs.length === 0;
+    const profileDisplayName = profileUser?.username || username;
+    const profileCreatedAt = profileUser?.created_at || new Date().toISOString();
 
     const primaryBadge = profileUser?.badges?.[0];
     const paidNameStyle = primaryBadge?.color === 'yellow'
@@ -427,10 +590,12 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
         return `${url}${url.includes('?') ? '&' : '?'}v=${version}`;
     };
     const profileSeed = `${profileUser?.id || profileUser?.username || username}`;
-    const generatedHeroCover = getCoverUrl(
-        `https://picsum.photos/seed/${encodeURIComponent(`profile-cover-${profileSeed}`)}/2400/1200`
-    );
-    const heroCoverUrl = profileUser?.banner_url ? withAssetVersion(profileUser.banner_url, profileAssetVersion) : generatedHeroCover;
+    const generatedHeroCover = profileUser
+        ? getCoverUrl(`https://picsum.photos/seed/${encodeURIComponent(`profile-cover-${profileSeed}`)}/2400/1200`)
+        : undefined;
+    const heroCoverUrl = profileUser?.banner_url
+        ? withAssetVersion(profileUser.banner_url, profileAssetVersion)
+        : generatedHeroCover;
     const profileAvatarUrl = withAssetVersion(getAvatarUrl(profileUser?.avatar_url || '', profileUser?.username || username), profileAssetVersion);
     const editAvatarPreviewUrl = editAvatarUrl
         ? withAssetVersion(getAvatarUrl(editAvatarUrl, profileUser?.username || username), profileAssetVersion)
@@ -483,6 +648,25 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
     const heroStyle = heroCoverUrl
         ? { backgroundImage: `url(${heroCoverUrl})`, backgroundSize: 'cover', backgroundPosition: heroFocus }
         : {};
+
+    useEffect(() => {
+        const image = heroImageRef.current;
+        if (!image || !heroCoverUrl) return;
+        if (!image.complete || image.naturalWidth === 0) return;
+
+        const palette = extractPaletteFromImage(
+            image,
+            DEFAULT_HERO_PALETTE,
+            { base: 0.42, accent: 0.68, lift: 12 }
+        );
+        if (palette) {
+            setHeroPalette(prev => (
+                prev.base === palette.base && prev.accent === palette.accent ? prev : palette
+            ));
+            writeCachedHeroPalette(username, palette);
+        }
+    }, [heroCoverUrl, username]);
+
     const seededValue = (seed: string, offset: number) => {
         let hash = 2166136261 + offset * 374761393;
         for (let i = 0; i < seed.length; i += 1) {
@@ -593,20 +777,9 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
         };
     }, [isInfoModalOpen, profileAvatarUrl]);
 
-    if (loading && !profileUser) {
+    if (!profileUser && !loading) {
         return (
-            <div className="flex items-center justify-center h-full bg-zinc-50 dark:bg-black">
-                <div className="text-zinc-500 dark:text-zinc-400 gap-2 flex items-center">
-                    <div className="w-4 h-4 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin"></div>
-                    {t('loadingProfile')}
-                </div>
-            </div>
-        );
-    }
-
-    if (!profileUser) {
-        return (
-            <div className="flex flex-col items-center justify-center h-full gap-4 bg-zinc-50 dark:bg-black">
+            <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-zinc-50 dark:bg-black">
                 <div className="text-zinc-500 dark:text-zinc-400">{t('userNotFound')}</div>
                 <button onClick={onBack} className="px-4 py-2 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 rounded-lg text-zinc-900 dark:text-white">
                     {t('goBack')}
@@ -623,6 +796,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
             style={{ backgroundColor: heroPalette.base }}
         >
             <img
+                ref={heroImageRef}
                 src={heroCoverUrl}
                 alt=""
                 aria-hidden="true"
@@ -669,13 +843,18 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                 <div className="relative z-10 mx-auto flex min-h-[960px] max-w-7xl flex-col justify-end px-6 pb-16 pt-24 md:px-10">
                     <div className="flex flex-col items-center text-center">
                         <h1 className={`max-w-5xl text-5xl font-black uppercase tracking-normal text-white drop-shadow-2xl md:text-7xl lg:text-8xl ${paidNameStyle}`}>
-                            {profileUser.username}
+                            {isProfileLoading ? (
+                                <span className="block h-14 w-[260px] animate-pulse rounded bg-white/12 md:h-20 md:w-[360px] lg:h-24 lg:w-[440px]" />
+                            ) : (
+                                profileDisplayName
+                            )}
                         </h1>
 
                         <div className="mt-8 grid grid-cols-[72px_96px_72px] items-center justify-center gap-4">
                             <div className="flex justify-end">
                                 <button
                                     onClick={() => setIsInfoModalOpen(true)}
+                                    disabled={!profileUser}
                                     className="flex h-14 w-14 items-center justify-center rounded-full bg-white/15 text-white/85 backdrop-blur-md transition hover:bg-white/25 hover:text-white"
                                     title={t('profileInfo')}
                                 >
@@ -770,7 +949,22 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                         <h2 className="text-xl md:text-2xl font-bold text-zinc-900 dark:text-white">{t('allSongs')}</h2>
                     </div>
 
-                    {displaySongs.length === 0 ? (
+                    {isHeroCollectionsLoading ? (
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-4 lg:grid-cols-3">
+                            {Array.from({ length: 6 }, (_, index) => (
+                                <div
+                                    key={`all-songs-skeleton-${index}`}
+                                    className="flex items-center gap-3 rounded-lg p-2 md:gap-4 md:p-3"
+                                >
+                                    <div className="h-14 w-14 animate-pulse rounded-lg bg-black/10 dark:bg-white/10 md:h-16 md:w-16" />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="h-5 w-[72%] animate-pulse rounded bg-black/10 dark:bg-white/12" />
+                                        <div className="mt-2 h-4 w-[56%] animate-pulse rounded bg-black/10 dark:bg-white/10" />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : displaySongs.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16 text-zinc-500">
                             <MusicIcon size={64} className="mb-4 opacity-50" />
                             <p>{publicSongs.length > 0 ? t('allRankedSongsShownAbove') : t('noPublicSongsYet')}</p>
@@ -779,32 +973,21 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
                             {displaySongs.map((song) => {
                                 const isCurrentSong = currentSong?.id === song.id;
-                                const isLiked = likedSongIds.has(song.id);
+                                const genreSummary = buildSongGenreSummary(song);
                                 return (
                                     <div
                                         key={song.id}
-                                        className={`group flex items-center gap-3 md:gap-4 p-2 md:p-3 rounded-lg transition-colors ${isCurrentSong ? 'bg-[#9bb89d]/15 dark:bg-[#9bb89d]/10' : 'hover:bg-white/10'}`}
+                                        className={`group flex items-center gap-3 md:gap-4 rounded-lg p-2 md:p-3 transition-colors ${isCurrentSong ? 'bg-[#9bb89d]/15 dark:bg-[#9bb89d]/10' : 'hover:bg-white/10'}`}
                                     >
                                         <div className="w-14 h-14 md:w-16 md:h-16 flex-shrink-0">
                                             {renderCoverControl(song, displaySongs, 'w-full h-full object-cover', 22)}
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                            <h3 className={`font-semibold truncate text-sm md:text-base ${isCurrentSong ? 'text-[#6f8f72] dark:text-[#a8c9a4]' : 'text-zinc-900 dark:text-white'}`}>{song.title}</h3>
-                                            <p className="text-xs md:text-sm text-zinc-500 dark:text-zinc-400 truncate">{song.style}</p>
-                                            <div className="flex items-center gap-3 text-xs text-zinc-500 mt-1">
-                                                <span className="flex items-center gap-1"><Star size={10} className={isLiked ? 'fill-[#8fb68f] text-[#6f8f72] dark:text-[#a8c9a4]' : ''} /> {song.likeCount || 0}</span>
-                                                <span className="flex items-center gap-1"><Play size={10} /> {song.viewCount || 0}</span>
-                                                <span>{song.duration}</span>
-                                            </div>
+                                        <div className="flex min-w-0 flex-1 flex-col justify-center">
+                                            <h3 className={`truncate text-sm font-semibold md:text-base ${isCurrentSong ? 'text-[#6f8f72] dark:text-[#a8c9a4]' : 'text-zinc-900 dark:text-white'}`}>{song.title}</h3>
+                                            <p className="mt-1 truncate text-xs md:text-sm text-zinc-500 dark:text-zinc-400">
+                                                {genreSummary}
+                                            </p>
                                         </div>
-                                        {onToggleLike && (
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); onToggleLike(song.id); }}
-                                                className={`p-2 rounded-full transition-colors flex-shrink-0 ${isLiked ? 'text-[#6f8f72] dark:text-[#a8c9a4]' : 'text-zinc-400 hover:text-[#6f8f72] dark:hover:text-[#a8c9a4]'}`}
-                                            >
-                                                <Star size={18} className={isLiked ? 'fill-current' : ''} />
-                                            </button>
-                                        )}
                                     </div>
                                 );
                             })}
@@ -858,7 +1041,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                         <img
                             ref={infoImageLayerRef}
                             src={profileAvatarUrl}
-                            alt={profileUser.username}
+                            alt={profileDisplayName}
                             className="pointer-events-none absolute inset-0 h-full w-full object-cover transition-[opacity,filter,transform] duration-200 will-change-[opacity,filter,transform]"
                             style={{ opacity: 0.96, filter: 'blur(0px)', transform: 'scale(1)', objectPosition: avatarFocus }}
                             referrerPolicy="no-referrer"
@@ -908,12 +1091,12 @@ export const UserProfile: React.FC<UserProfileProps> = ({ username, initialUser 
                             className="relative z-10 h-full overflow-y-auto text-white custom-scrollbar"
                         >
                             <div className="flex min-h-full flex-col justify-end px-7 pb-12 pt-[42vh] sm:px-9">
-                                <h2 className="text-5xl font-black tracking-normal drop-shadow-lg sm:text-6xl">{profileUser.username}</h2>
+                                <h2 className="text-5xl font-black tracking-normal drop-shadow-lg sm:text-6xl">{profileDisplayName}</h2>
 
                                 <div className="mt-7">
                                     <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/55">{t('joined')}</p>
                                     <p className="mt-2 text-xl font-semibold text-white/95">
-                                        {new Date(profileUser.created_at).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', { month: 'long', year: 'numeric' })}
+                                        {new Date(profileCreatedAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', { month: 'long', year: 'numeric' })}
                                     </p>
                                 </div>
 
