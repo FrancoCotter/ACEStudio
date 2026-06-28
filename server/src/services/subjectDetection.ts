@@ -22,18 +22,27 @@ type PythonCandidate = { command: string; args: string[] };
 let preferredCandidate: PythonCandidate | null = null;
 let detectionUnavailableUntil = 0;
 
+function discoverPythonCommands(aceStepRoot: string): string[] {
+  const configuredCommands = [process.env.PYTHON_PATH].filter((command): command is string => Boolean(command));
+  const bundledCandidates = [
+    path.join(aceStepRoot, 'python_embeded/python.exe'),
+    path.join(aceStepRoot, 'env/Scripts/python.exe'),
+    path.join(aceStepRoot, 'env/bin/python'),
+    path.join(aceStepRoot, '.venv/Scripts/python.exe'),
+    path.join(aceStepRoot, '.venv/bin/python'),
+    path.join(aceStepRoot, 'venv/Scripts/python.exe'),
+    path.join(aceStepRoot, 'venv/bin/python'),
+  ].filter(candidate => existsSync(candidate));
+
+  return [...new Set([...configuredCommands, ...bundledCandidates, 'python', 'python3', 'py'])];
+}
+
 export async function detectSubject(buffer: Buffer): Promise<SubjectDetection> {
   if (!preferredCandidate && Date.now() < detectionUnavailableUntil) return fallback;
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const script = path.resolve(__dirname, '../../scripts/detect_subject.py');
   const aceStepRoot = path.resolve(process.env.ACESTEP_PATH || path.resolve(process.cwd(), '../ACE-Step-1.5'));
-  const configuredCommands = [
-    process.env.PYTHON_PATH,
-    path.join(aceStepRoot, 'python_embeded/python.exe'),
-    path.join(aceStepRoot, '.venv/Scripts/python.exe'),
-    path.join(aceStepRoot, '.venv/bin/python'),
-  ].filter((command): command is string => Boolean(command) && existsSync(command as string));
-  const pythonCommands = [...new Set([...configuredCommands, 'python', 'python3', 'py'])];
+  const pythonCommands = discoverPythonCommands(aceStepRoot);
   const discoveredCandidates: PythonCandidate[] = [
     ...pythonCommands.map(command => ({ command, args: [script] })),
     { command: 'uv', args: ['run', '--project', aceStepRoot, 'python', script] },

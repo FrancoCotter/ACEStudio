@@ -54,18 +54,46 @@ if not exist "server\data" (
     mkdir server\data
 )
 
-REM Install subject detection python dependencies
+REM Install and verify subject detection python dependencies
 set "ACESTEP_ENV=..\ACE-Step-1.5"
 if exist "ACE-Step-1.5" set "ACESTEP_ENV=ACE-Step-1.5"
-if exist "%ACESTEP_ENV%\.venv\Scripts\pip.exe" (
+set "ACESTEP_PYTHON="
+set "ACESTEP_PIP="
+
+for %%d in (env .venv venv) do (
+    if not defined ACESTEP_PYTHON if exist "%ACESTEP_ENV%\%%d\Scripts\python.exe" (
+        set "ACESTEP_PYTHON=%ACESTEP_ENV%\%%d\Scripts\python.exe"
+    )
+    if not defined ACESTEP_PIP if exist "%ACESTEP_ENV%\%%d\Scripts\pip.exe" (
+        set "ACESTEP_PIP=%ACESTEP_ENV%\%%d\Scripts\pip.exe"
+    )
+)
+
+if defined ACESTEP_PYTHON (
     echo.
+    echo Using ACE-Step Python: %ACESTEP_PYTHON%
     echo Installing subject detection python dependencies (opencv-python, mediapipe)...
-    "%ACESTEP_ENV%\.venv\Scripts\pip.exe" install opencv-python mediapipe --quiet
+    if defined ACESTEP_PIP (
+        "%ACESTEP_PIP%" install opencv-python mediapipe --quiet
+    ) else (
+        "%ACESTEP_PYTHON%" -m pip install opencv-python mediapipe --quiet
+    )
     if !ERRORLEVEL! EQU 0 (
         echo Python dependencies installed successfully.
     ) else (
-        echo Warning: Failed to install python dependencies automatically. Please run: pip install opencv-python mediapipe
+        echo Warning: Failed to install python dependencies automatically. Please run: "%ACESTEP_PYTHON%" -m pip install opencv-python mediapipe
     )
+
+    echo Verifying subject detection dependencies...
+    "%ACESTEP_PYTHON%" server\scripts\check_subject_detection_env.py
+    if !ERRORLEVEL! NEQ 0 (
+        echo Warning: mediapipe/opencv verification failed in the selected ACE-Step environment.
+        echo Please resolve the Python error above before relying on avatar/banner auto-cropping.
+    )
+) else (
+    echo.
+    echo Warning: No ACE-Step virtual environment was found under env, .venv, or venv.
+    echo Please install mediapipe manually in the Python environment used by ACE-Step.
 )
 
 echo.
