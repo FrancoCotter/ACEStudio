@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, User as UserIcon, Palette, Info, Edit3, ExternalLink, Globe, ChevronDown, Github } from 'lucide-react';
+import { X, User as UserIcon, Info, ExternalLink, Globe, ChevronDown, Github } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
-import { EditProfileModal } from './EditProfileModal';
 import { getAvatarUrl } from '../utils/avatar';
 
 interface SettingsModalProps {
@@ -16,7 +15,6 @@ interface SettingsModalProps {
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, theme, onToggleTheme, onNavigateToProfile }) => {
     const { user } = useAuth();
     const { t, language, setLanguage } = useI18n();
-    const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
     const [showLangInfo, setShowLangInfo] = useState(false);
     const langInfoRef = useRef<HTMLDivElement>(null);
 
@@ -31,18 +29,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, t
         return () => document.removeEventListener('mousedown', handleClick);
     }, [showLangInfo]);
 
-    if (!isOpen || !user) {
-        if (isEditProfileOpen && user) {
-            return (
-                <EditProfileModal
-                    isOpen={isEditProfileOpen}
-                    onClose={() => setIsEditProfileOpen(false)}
-                    onSaved={() => setIsEditProfileOpen(false)}
-                />
-            );
-        }
-        return null;
-    }
+    if (!isOpen || !user) return null;
 
     return (
         <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={onClose}>
@@ -75,16 +62,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, t
                                 </p>
                             </div>
                             <div className="flex gap-2">
-                                <button
-                                    onClick={() => {
-                                        onClose();
-                                        setIsEditProfileOpen(true);
-                                    }}
-                                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
-                                >
-                                    <Edit3 size={16} />
-                                    {t('editProfile')}
-                                </button>
                                 <button
                                     onClick={() => {
                                         onClose();
@@ -283,11 +260,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, t
                 </div>
             </div>
 
-            <EditProfileModal
-                isOpen={isEditProfileOpen}
-                onClose={() => setIsEditProfileOpen(false)}
-                onSaved={() => setIsEditProfileOpen(false)}
-            />
         </div>
     );
 };
