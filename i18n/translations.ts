@@ -392,6 +392,7 @@ export const translations = {
     videoRenderFailed: 'Video rendering failed. Please try again.',
     
     // SongList / Filters
+     myworkspace:'My Workspace',
     searchYourSongs: 'Search your songs...',
     filters: 'Filters',
     refineBy: 'REFINE BY',
@@ -1059,6 +1060,7 @@ export const translations = {
     videoRenderFailed: '视频渲染失败。请重试。',
     
     // SongList / Filters
+      myworkspace:'工作区',
     searchYourSongs: '搜索你的歌曲...',
     filters: '筛选',
     refineBy: '筛选条件',
@@ -1771,6 +1773,7 @@ export const translations = {
     videoRenderFailed: 'ビデオレンダリングに失敗しました。もう一度お試しください。',
     
     // SongList / Filters
+     myworkspace:'ワークスペース',
     searchYourSongs: '曲を検索...',
     filters: 'フィルター',
     refineBy: '絞り込み',
@@ -2483,6 +2486,7 @@ export const translations = {
     videoRenderFailed: '비디오 렌더링에 실패했습니다. 다시 시도하세요.',
     
     // SongList / Filters
+    myworkspace:'작업공간',
     searchYourSongs: '곡 검색...',
     filters: '필터',
     refineBy: '세분화',
